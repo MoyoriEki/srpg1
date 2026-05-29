@@ -1,0 +1,144 @@
+{
+  "canto": {
+    "name": "再移動",
+    "category": "class",
+    "desc": "攻撃後に再移動できる",
+    "effects": [
+      {
+        "trigger": "afterAction",
+        "type": "canto"
+      }
+    ]
+  },
+  "revenge": {
+    "name": "報復",
+    "category": "class",
+    "desc": "ダメージを受けた返しターンのATK+3",
+    "effects": [
+      {
+        "trigger": "onDamaged",
+        "scope": "self",
+        "type": "delayedStatMod",
+        "mods": {
+          "atk": 3
+        }
+      }
+    ]
+  },
+  "miracle": {
+    "name": "不屈",
+    "category": "class",
+    "desc": "HPが0になる攻撃を1回耐える",
+    "effects": [
+      {
+        "trigger": "onDamaged",
+        "type": "miracle",
+        "once": true
+      }
+    ]
+  },
+  "substitute": {
+    "name": "身代わり",
+    "category": "class",
+    "desc": "隣接味方への攻撃を肩代わり",
+    "effects": [
+      {
+        "trigger": "onEnemyAttackBefore",
+        "type": "substitute",
+        "perTurn": true
+      }
+    ]
+  },
+  "healBoost": {
+    "name": "癒しの力",
+    "category": "class",
+    "desc": "回復+50%",
+    "effects": [
+      {
+        "trigger": "onHeal",
+        "scope": "self",
+        "type": "healMult",
+        "mult": 1.5
+      }
+    ]
+  },
+  "rangeBoost": {
+    "name": "遠撃",
+    "category": "class",
+    "desc": "射程2↑技のATK+2/妨害命中+15",
+    "effects": [
+      {
+        "trigger": "onAttack",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "atk": 2
+        },
+        "cond": {
+          "techRangeMin": 2
+        }
+      },
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "debuffHitBonus",
+        "value": 15,
+        "cond": {
+          "techRangeMin": 2
+        }
+      }
+    ]
+  },
+  "fly": {
+    "name": "飛行",
+    "category": "movement",
+    "desc": "飛行移動",
+    "effects": [
+      {
+        "trigger": "always",
+        "type": "moveType",
+        "moveType": "fly"
+      }
+    ]
+  },
+  "oneManArmy": {
+    "name": "一騎当千",
+    "category": "personal",
+    "desc": "自ターンATK+2",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": { "atk": 2 },
+        "cond": { "ownTurn": true }
+      }
+    ]
+  },
+  "monsterEater": {
+    "name": "魔物食",
+    "category": "personal",
+    "desc": "敵撃破時HP5回復",
+    "effects": [
+      {
+        "trigger": "onKill",
+        "scope": "self",
+        "type": "heal",
+        "value": 5
+      }
+    ]
+  },
+  "heavyArmor": {
+    "name": "重装",
+    "category": "personal",
+    "desc": "アイテム枠+1",
+    "effects": [
+      {
+        "trigger": "always",
+        "type": "slotBonus",
+        "slot": "item",
+        "value": 1
+      }
+    ]
+  }
+}

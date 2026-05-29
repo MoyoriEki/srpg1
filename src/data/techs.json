@@ -1,0 +1,626 @@
+{
+  "_comment": "type: flatAdd(ATK+mod-DEF), mult(ATK×mult-DEF), fixed(固定), intRef(INT×mult-敵INT), heal, debuffOnly, selfBuff",
+  "猛撃": {
+    "type": "flatAdd",
+    "mod": 9,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 4,
+    "desc": "威力6/射1/回4",
+    "tag": "fire",
+    "rarity": "C"
+  },
+  "狙い撃ち": {
+    "type": "flatAdd",
+    "mod": 6,
+    "rangeMin": 2,
+    "rangeMax": 2,
+    "maxUses": 4,
+    "desc": "威力3/射2/回4",
+    "tag": "fire",
+    "rarity": "C"
+  },
+  "炎連拳": {
+    "type": "mult",
+    "mult": 4,
+    "hits": 2,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 3,
+    "desc": "×1.0×2/射1/回3",
+    "tag": "fire",
+    "rarity": "C"
+  },
+  "砲撃": {
+    "type": "flatAdd",
+    "mod": 5,
+    "rangeMin": 2,
+    "rangeMax": 3,
+    "maxUses": 2,
+    "desc": "威力5/射2-3/回2",
+    "tag": "fire",
+    "rarity": "C"
+  },
+  "焼き払い": {
+    "type": "flatAdd",
+    "mod": 9,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "cond": {
+      "stat": "str",
+      "val": 13
+    },
+    "desc": "威力9/射1/回2/アンデッド特攻",
+    "tag": "fire",
+    "rarity": "U"
+  },
+  "火計": {
+    "type": "flatAdd",
+    "mod": 6,
+    "rangeMin": 2,
+    "rangeMax": 2,
+    "maxUses": 2,
+    "cond": {
+      "stat": "str",
+      "val": 13
+    },
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "火傷", "amount": 2, "max": 99 }
+    ],
+    "desc": "威力6+火傷2/射2/回2",
+    "tag": "fire",
+    "rarity": "U"
+  },
+  "烈火": {
+    "type": "mult",
+    "mult": 2,
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 2,
+    "aoe": "dir_line",
+    "cond": {
+      "counter": "衝動",
+      "cost": 3
+    },
+    "desc": "×2.0/前方2マス直線/衝動3消費",
+    "tag": "fire",
+    "rarity": "U"
+  },
+  "爆炎": {
+    "type": "mult",
+    "mult": 2,
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 1,
+    "aoe": "dir_cross",
+    "cond": {
+      "stat": "str",
+      "val": 20,
+      "counter": "衝動",
+      "cost": 6
+    },
+    "desc": "×2.0/範囲/STR20&衝動6消費",
+    "tag": "fire",
+    "rarity": "R"
+  },
+  "猛火": {
+    "type": "mult",
+    "mult": 2,
+    "rangeMin": 2,
+    "rangeMax": 6,
+    "maxUses": 2,
+    "cond": {
+      "stat": "str",
+      "val": 15,
+      "stat2": "int",
+      "val2": 15
+    },
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "火傷", "amount": 6, "max": 99 }
+    ],
+    "desc": "×2.0/射2-6/火傷6/STR15&INT15",
+    "tag": "fire",
+    "rarity": "R"
+  },
+  "吸命撃": {
+    "type": "mult",
+    "mult": 1,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "drain": 0.5,
+    "desc": "×1.0/射1/回2/与ダメ50%回復",
+    "tag": "fire",
+    "rarity": "R"
+  },
+  "シールドバッシュ": {
+    "type": "flatAdd",
+    "mod": 6,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 4,
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "ATK低下", "amount": 1, "max": 99 }
+    ],
+    "desc": "威力3/射1/回4/ATK低下",
+    "tag": "water",
+    "rarity": "C"
+  },
+  "脳天割り": {
+    "type": "flatAdd",
+    "mod": 5,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "反撃不能", "amount": 1, "max": 1, "hitCheck": { "baseHit": 70 } }
+    ],
+    "debuffOnDamage": true,
+    "desc": "×1.0/射1/回3/目まい(70%/ダメ時のみ)",
+    "tag": "water",
+    "rarity": "C"
+  },
+  "鉄壁の構え": {
+    "type": "buff",
+    "selfOnly": true,
+    "buff": {
+      "def": 5
+    },
+    "duration": 2,
+    "selfEnd": true,
+    "oncePer": true,
+    "noAction": true,
+    "maxUses": 3,
+    "desc": "DEF+5(2T)/行動消費なし/1T1回",
+    "tag": "water",
+    "rarity": "C"
+  },
+  "水流の槍": {
+    "type": "intRef",
+    "intMult": 1,
+    "flatAdd": 8,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 3,
+    "desc": "INT参照/威力5/射1/回3",
+    "tag": "water",
+    "rarity": "C"
+  },
+  "挑発": {
+    "type": "debuffOnly",
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "タゲ固定", "amount": 1, "max": 1 }
+    ],
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 2,
+    "desc": "射1-2/タゲ固定(1T)",
+    "tag": "water",
+    "rarity": "C"
+  },
+  "ぶちかまし": {
+    "type": "flatAdd",
+    "mod": 6,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "push": 1,
+    "cond": {
+      "stat": "def",
+      "val": 13
+    },
+    "desc": "威力6/射1/回2/1マス押出/DEF13",
+    "tag": "water",
+    "rarity": "U"
+  },
+  "救出": {
+    "type": "special",
+    "subType": "rescue",
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "cond": {
+      "stat": "def",
+      "val": 13
+    },
+    "desc": "射1/回2/味方を担ぐ/DEF13",
+    "tag": "water",
+    "rarity": "U"
+  },
+  "氷結": {
+    "type": "intRef",
+    "intMult": 1,
+    "flatAdd": 6,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 1,
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "氷結", "amount": 1, "max": 1, "hitCheck": { "baseHit": 50 } }
+    ],
+    "desc": "INT参照/威力6/射1/回1/氷結(50%)",
+    "tag": "water",
+    "rarity": "U"
+  },
+  "要塞化": {
+    "type": "buff",
+    "selfOnly": true,
+    "buff": {
+      "defMult": 2
+    },
+    "duration": 3,
+    "selfEnd": true,
+    "maxUses": 1,
+    "cond": {
+      "stat": "def",
+      "val": 20
+    },
+    "desc": "DEF2倍(3T)/DEF20",
+    "tag": "water",
+    "rarity": "R"
+  },
+  "アクアウォール": {
+    "type": "special",
+    "subType": "summon",
+    "summon": "水壁",
+    "count": 2,
+    "maxUses": 2,
+    "desc": "水壁トークン2体召喚",
+    "tag": "water",
+    "rarity": "R"
+  },
+  "ヒール": {
+    "type": "heal",
+    "healMult": 1,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 3,
+    "desc": "INT×1.0回復/射1/回4",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  "風の矢": {
+    "type": "intRef",
+    "intMult": 1,
+    "flatAdd": 5,
+    "rangeMin": 2,
+    "rangeMax": 2,
+    "maxUses": 3,
+    "desc": "INT参照/威力3/射1-2/回3",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  "ショック": {
+    "type": "intRef",
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "反撃不能", "amount": 1, "max": 1, "hitCheck": { "baseHit": 70 } }
+    ],
+    "rangeType": "intDiv",
+    "rangeDivisor": 3,
+    "maxUses": 3,
+    "desc": "射INT÷3/目まい3(90%)",
+    "tag": "wind",
+    "rarity": "C",
+    "debuffOnDamage": true,
+    "intMult": 1,
+    "flatAdd": 2
+  },
+  "忘却の声": {
+    "type": "debuffOnly",
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "技不能", "amount": 1, "max": 1, "hitCheck": { "baseHit": 80 } }
+    ],
+    "rangeType": "intDiv",
+    "rangeDivisor": 2,
+    "maxUses": 2,
+    "desc": "射INT÷2/忘却1(80%)",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  "聖域の祈り": {
+    "type": "heal",
+    "healMult": 1,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 1,
+    "aoe": "adj_heal",
+    "cond": {
+      "stat": "int",
+      "val": 13
+    },
+    "desc": "INT×1.0回復/射1/対象隣接も/INT13",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  "稲妻": {
+    "type": "intRef",
+    "intMult": 1,
+    "flatAdd": 9,
+    "rangeMin": 2,
+    "rangeMax": 3,
+    "maxUses": 2,
+    "desc": "INT参照/威力3/射1-2/回3",
+    "tag": "wind",
+    "rarity": "U",
+    "cond": {
+      "stat": "int",
+      "val": 13
+    },
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "反撃不能", "amount": 1, "max": 1, "hitCheck": { "baseHit": 50 } }
+    ],
+    "debuffOnDamage": true
+  },
+  "バインド": {
+    "type": "debuffOnly",
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "移動不能", "amount": 1, "max": 1, "hitCheck": { "baseHit": 70 } }
+    ],
+    "rangeType": "intDiv",
+    "rangeDivisor": 2,
+    "maxUses": 2,
+    "cond": {
+      "stat": "int",
+      "val": 13
+    },
+    "desc": "射INT÷2/捕縛1(70%)/INT13",
+    "tag": "wind",
+    "rarity": "U"
+  },
+  "風の祈り": {
+    "type": "heal",
+    "healMult": 1,
+    "rangeType": "intDiv",
+    "rangeDivisor": 2,
+    "maxUses": 2,
+    "cond": {
+      "stat": "int",
+      "val": 13
+    },
+    "desc": "INT×1.0回復/射INT÷2/INT13",
+    "tag": "wind",
+    "rarity": "U"
+  },
+  "踊り": {
+    "type": "special",
+    "subType": "refresh",
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "desc": "射1/回2/再行動付与",
+    "tag": "wind",
+    "rarity": "U"
+  },
+  "女神の祈り": {
+    "type": "heal",
+    "healMult": 1,
+    "aoe": "self_area",
+    "aoeRange": "intHalf",
+    "maxUses": 1,
+    "cond": {
+      "stat": "int",
+      "val": 20
+    },
+    "desc": "INT÷2範囲/INT分回復/INT20",
+    "tag": "wind",
+    "rarity": "R"
+  },
+  "嵐の一撃": {
+    "type": "intRef",
+    "intMult": 1,
+    "flatAdd": 13,
+    "defIgnore": true,
+    "rangeType": "intDiv",
+    "rangeDivisor": 2,
+    "maxUses": 2,
+    "cond": {
+      "stat": "int",
+      "val": 20
+    },
+    "desc": "INT×0.7/DEF無視/射INT÷2/INT15",
+    "tag": "wind",
+    "rarity": "R",
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "移動不能", "amount": 1, "max": 1, "hitCheck": { "baseHit": 50 } }
+    ],
+    "debuffOnDamage": true
+  },
+  "魔力の手": {
+    "type": "special",
+    "subType": "telekinesis",
+    "rangeType": "intDiv",
+    "rangeDivisor": 2,
+    "maxUses": 2,
+    "condBonus": {
+      "stat": "def",
+      "val": 15,
+      "bonus": "uses+1"
+    },
+    "desc": "INT÷2射程でユニット移動/DEF15で+1回",
+    "tag": "wind",
+    "rarity": "R"
+  },
+  "簡易縫合": {
+    "type": "heal",
+    "healFixed": 6,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "noAction": true,
+    "oncePer": true,
+    "desc": "6回復/行動消費なし/1T1回",
+    "tag": "light",
+    "rarity": "C"
+  },
+  "投擲": {
+    "type": "fixed",
+    "fixed": 4,
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 2,
+    "noAction": true,
+    "oncePer": true,
+    "desc": "固定4/射1-2/行動消費なし/1T1回",
+    "tag": "light",
+    "rarity": "C"
+  },
+  "血の代償": {
+    "type": "special",
+    "subType": "bloodPay",
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 1,
+    "desc": "HP支払い(最大13)+6の固定ダメージ",
+    "tag": "dark",
+    "rarity": "U"
+  },
+  "狂気のやすらぎ": {
+    "type": "special",
+    "subType": "curseHeal",
+    "counter": "呪い",
+    "rangeMin": 0,
+    "rangeMax": 0,
+    "maxUses": 99,
+    "desc": "呪いカウンター+1。呪いカウンター数分HP回復",
+    "tag": "dark",
+    "rarity": "",
+    "noSlot": true
+  },
+  "解呪": {
+    "type": "special",
+    "subType": "uncurse",
+    "counter": "呪い",
+    "maxRemove": 6,
+    "dmgPerRemove": 6,
+    "rangeMin": 0,
+    "rangeMax": 0,
+    "maxUses": 99,
+    "desc": "呪いカウンター最大6除去。除去数×6ダメージ",
+    "tag": "dark",
+    "rarity": "",
+    "noSlot": true
+  },
+  "強撃": {
+    "type": "flatAdd",
+    "mod": 6,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 4,
+    "desc": "威力6/射1/回4",
+    "rarity": "C",
+    "tag": "none"
+  },
+  "殴突": {
+    "type": "fixed",
+    "fixed": 8,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 4,
+    "desc": "固定8/射1/回4",
+    "tag": "none",
+    "rarity": "C"
+  },
+  "渾身": {
+    "type": "mult",
+    "mult": 2,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 2,
+    "cond": {
+      "stat": "str",
+      "val": 15
+    },
+    "desc": "×2.0/射1/STR15",
+    "enemyOnly": true
+  },
+  "咆哮": {
+    "type": "mult",
+    "mult": 1,
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 2,
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "ATK低下", "amount": 2, "max": 99 }
+    ],
+    "desc": "×1.0/射1-2/ATK低下2T",
+    "enemyOnly": true
+  },
+  "大爆発": {
+    "type": "mult",
+    "mult": 3,
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 1,
+    "desc": "×3.0/射1-2/チャージ",
+    "enemyOnly": true
+  },
+  "憤怒の咆哮": {
+    "type": "mult",
+    "mult": 1.5,
+    "rangeMin": 1,
+    "rangeMax": 2,
+    "maxUses": 1,
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "ATK低下", "amount": 2, "max": 99 }
+    ],
+    "desc": "×1.5/射1-2/ATK低下2T/チャージ",
+    "enemyOnly": true
+  },
+  "ブレス": {
+    "type": "mult",
+    "mult": 2.5,
+    "rangeMin": 1,
+    "rangeMax": 3,
+    "maxUses": 1,
+    "effects": [
+      { "trigger": "onCombat", "scope": "target", "type": "counterGen", "counter": "火傷", "amount": 2, "max": 99 }
+    ],
+    "desc": "×2.5/射1-3/火傷2T/チャージ",
+    "enemyOnly": true
+  },
+  "体当たり": {
+    "type": "fixed",
+    "fixed": 2,
+    "rangeMin": 1,
+    "rangeMax": 1,
+    "maxUses": 99,
+    "push": 1,
+    "noSlot": true,
+    "desc": "固定2ダメ/1マス押出",
+    "tag": "none"
+  },
+  "衝動解放": {
+    "type": "buff",
+    "selfOnly": true,
+    "buff": {
+      "str": 3,
+      "def": 3,
+      "int": 3
+    },
+    "duration": 1,
+    "maxUses": 99,
+    "noSlot": true,
+    "noAction": true,
+    "counterCost": {
+      "name": "衝動",
+      "cost": 3
+    },
+    "desc": "衝動3消費→STR/DEF/INT+3(1T)",
+    "tag": "fire"
+  },
+  "反逆発動": {
+    "type": "special",
+    "subType": "extraAction",
+    "rangeMin": 0,
+    "rangeMax": 0,
+    "maxUses": 99,
+    "noSlot": true,
+    "noAction": true,
+    "counterCost": {
+      "name": "反逆",
+      "cost": 6
+    },
+    "desc": "反逆6消費→2回行動",
+    "tag": "water"
+  }
+}

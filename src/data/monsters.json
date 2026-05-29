@@ -1,0 +1,86 @@
+[
+  {
+    "name": "狼",
+    "hp": 0,
+    "str": 0,
+    "def": -2,
+    "int": -2,
+    "mov": 2,
+    "bonusSlots": {},
+    "desc": "MOV+2 DEF-2 INT-2"
+  },
+  {
+    "name": "象",
+    "hp": 0,
+    "str": 2,
+    "def": 4,
+    "int": 0,
+    "mov": -1,
+    "bonusSlots": {},
+    "desc": "STR+2 DEF+4 MOV-1"
+  },
+  {
+    "name": "荷運びゴブリン",
+    "hp": 0,
+    "str": 0,
+    "def": 0,
+    "int": 0,
+    "mov": 0,
+    "bonusSlots": {
+      "tech": 1,
+      "skill": 1,
+      "item": 1
+    },
+    "desc": "枠+3"
+  },
+  {
+    "name": "鷹",
+    "hp": 0,
+    "str": 0,
+    "def": 0,
+    "int": 3,
+    "mov": 1,
+    "bonusSlots": {},
+    "desc": "INT+3 MOV+1"
+  },
+  {
+    "name": "猪",
+    "hp": 0,
+    "str": 4,
+    "def": 0,
+    "int": 0,
+    "mov": 0,
+    "bonusSlots": {},
+    "desc": "STR+4"
+  },
+  {
+    "name": "亀",
+    "hp": 10,
+    "str": 0,
+    "def": 2,
+    "int": -1,
+    "mov": 0,
+    "bonusSlots": {},
+    "desc": "HP+10 DEF+2 INT-1"
+  },
+  {
+    "name": "蛇",
+    "hp": -5,
+    "str": 0,
+    "def": 0,
+    "int": 4,
+    "mov": 0,
+    "bonusSlots": {},
+    "desc": "INT+4 HP-5"
+  },
+  {
+    "name": "山羊",
+    "hp": 5,
+    "str": 1,
+    "def": 1,
+    "int": 1,
+    "mov": 0,
+    "bonusSlots": {},
+    "desc": "HP+5 STR+1 DEF+1 INT+1"
+  }
+]

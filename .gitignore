@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+
+# Vite ESM config の一時ファイル（クラッシュ時に残る）
+vite.config.js.timestamp-*.mjs
+.vite/
+
+# package-lock.json は Actions の npm ci に必要なので追跡する（ignore しない）
+
+# 各種一時ファイル・ローカル設定
+*.tmp.*
+.claude/settings.local.json

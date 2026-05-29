@@ -1,0 +1,340 @@
+{
+  "classes": {
+    "冒険者": {
+      "tier": "初級",
+      "growth": {
+        "hp": 2.5,
+        "str": 0.8,
+        "def": 0.8,
+        "int": 0.8
+      },
+      "pp": 0,
+      "slots": {
+        "tech": 3,
+        "skill": 3,
+        "item": 1
+      },
+      "ccBonus": null,
+      "range": null,
+      "trait": null
+    },
+    "炎闘士": {
+      "tier": "中級",
+      "tag": "fire",
+      "growth": {
+        "hp": 2.5,
+        "str": 1.3,
+        "def": 0.8,
+        "int": 0.5
+      },
+      "pp": 3,
+      "slotsAdd": {
+        "tech": 2,
+        "skill": 2,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 2,
+        "str": 2,
+        "def": 1,
+        "int": 0
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": null
+    },
+    "水遁士": {
+      "tier": "中級",
+      "tag": "water",
+      "growth": {
+        "hp": 3,
+        "str": 0.5,
+        "def": 1.3,
+        "int": 0.8
+      },
+      "pp": 2,
+      "slotsAdd": {
+        "tech": 2,
+        "skill": 2,
+        "item": 2
+      },
+      "ccBonus": {
+        "hp": 4,
+        "str": 0,
+        "def": 2,
+        "int": 0
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": null
+    },
+    "風術士": {
+      "tier": "中級",
+      "tag": "wind",
+      "growth": {
+        "hp": 2,
+        "str": 0.8,
+        "def": 0.5,
+        "int": 1.3
+      },
+      "pp": 2,
+      "slotsAdd": {
+        "tech": 2,
+        "skill": 3,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 2,
+        "str": 1,
+        "def": 0,
+        "int": 2
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": null
+    },
+    "スレイヤー": {
+      "tier": "上級",
+      "tags": [
+        "fire",
+        "fire"
+      ],
+      "growth": {
+        "hp": 3,
+        "str": 1.7,
+        "def": 0.6,
+        "int": 0.6
+      },
+      "pp": 5,
+      "slotsAdd": {
+        "tech": 1,
+        "skill": 1,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 4,
+        "str": 4,
+        "def": 1,
+        "int": -1
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": "canto"
+    },
+    "ヴァンガード": {
+      "tier": "上級",
+      "tags": [
+        "fire",
+        "water"
+      ],
+      "growth": {
+        "hp": 3.5,
+        "str": 1.2,
+        "def": 1.2,
+        "int": 0.6
+      },
+      "pp": 3,
+      "slotsAdd": {
+        "tech": 1,
+        "skill": 1,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 6,
+        "str": 2,
+        "def": 2,
+        "int": 0
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": "revenge"
+    },
+    "フォートレス": {
+      "tier": "上級",
+      "tags": [
+        "water",
+        "water"
+      ],
+      "growth": {
+        "hp": 4,
+        "str": 0.6,
+        "def": 1.7,
+        "int": 0.6
+      },
+      "pp": 2,
+      "slotsAdd": {
+        "tech": 1,
+        "skill": 1,
+        "item": 2
+      },
+      "ccBonus": {
+        "hp": 8,
+        "str": -1,
+        "def": 4,
+        "int": 1
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": "miracle"
+    },
+    "プロテクター": {
+      "tier": "上級",
+      "tags": [
+        "water",
+        "wind"
+      ],
+      "growth": {
+        "hp": 3.5,
+        "str": 0.6,
+        "def": 1.2,
+        "int": 1.2
+      },
+      "pp": 2,
+      "slotsAdd": {
+        "tech": 1,
+        "skill": 1,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 6,
+        "str": 0,
+        "def": 2,
+        "int": 2
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": "substitute"
+    },
+    "オラクル": {
+      "tier": "上級",
+      "tags": [
+        "wind",
+        "wind"
+      ],
+      "growth": {
+        "hp": 2,
+        "str": 0.6,
+        "def": 0.6,
+        "int": 1.7
+      },
+      "pp": 3,
+      "slotsAdd": {
+        "tech": 2,
+        "skill": 1,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 3,
+        "str": 0,
+        "def": -1,
+        "int": 4
+      },
+      "range": {
+        "min": 1,
+        "max": 1
+      },
+      "trait": "healBoost"
+    },
+    "ソーサラー": {
+      "tier": "上級",
+      "tags": [
+        "fire",
+        "wind"
+      ],
+      "growth": {
+        "hp": 2,
+        "str": 1.2,
+        "def": 0.6,
+        "int": 1.2
+      },
+      "pp": 4,
+      "slotsAdd": {
+        "tech": 2,
+        "skill": 1,
+        "item": 1
+      },
+      "ccBonus": {
+        "hp": 0,
+        "str": 2,
+        "def": 0,
+        "int": 2
+      },
+      "range": {
+        "min": 2,
+        "max": 2
+      },
+      "trait": "rangeBoost"
+    }
+  },
+  "midCC": {
+    "fire": "炎闘士",
+    "water": "水遁士",
+    "wind": "風術士"
+  },
+  "advCC": {
+    "炎闘士_water": [
+      "スレイヤー",
+      "ヴァンガード"
+    ],
+    "炎闘士_wind": [
+      "スレイヤー",
+      "ソーサラー"
+    ],
+    "水遁士_fire": [
+      "フォートレス",
+      "ヴァンガード"
+    ],
+    "水遁士_wind": [
+      "フォートレス",
+      "プロテクター"
+    ],
+    "風術士_fire": [
+      "オラクル",
+      "ソーサラー"
+    ],
+    "風術士_water": [
+      "オラクル",
+      "プロテクター"
+    ]
+  },
+  "traits": {
+    "canto": {
+      "name": "再移動",
+      "desc": "攻撃後に再移動できる"
+    },
+    "revenge": {
+      "name": "報復",
+      "desc": "ダメージを受けた返しターンのATK+3"
+    },
+    "miracle": {
+      "name": "不屈",
+      "desc": "HPが0になる攻撃を1回耐える"
+    },
+    "substitute": {
+      "name": "身代わり",
+      "desc": "隣接味方への攻撃を肩代わり"
+    },
+    "healBoost": {
+      "name": "癒しの力",
+      "desc": "回復+50%"
+    },
+    "rangeBoost": {
+      "name": "遠撃",
+      "desc": "射程2↑技のATK+2/妨害命中+15"
+    }
+  }
+}

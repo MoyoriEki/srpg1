@@ -1,0 +1,60 @@
+[
+  {
+    "id": "item_heal",
+    "name": "傷薬",
+    "effect": "heal",
+    "value": 15,
+    "desc": "HP15回復"
+  },
+  {
+    "id": "item_shroom",
+    "name": "キノコ",
+    "effect": "movBuff",
+    "value": 5,
+    "noAction": true,
+    "duration": 1,
+    "desc": "MOV+5(1T)/行動消費なし"
+  },
+  {
+    "id": "item_feather",
+    "name": "羽",
+    "effect": "fly",
+    "duration": 3,
+    "noAction": true,
+    "desc": "飛行(3T)/行動消費なし"
+  },
+  {
+    "id": "item_str",
+    "name": "バフ薬STR",
+    "effect": "statBuff",
+    "stat": "str",
+    "value": 2,
+    "duration": "map",
+    "desc": "STR+2(マップ中)"
+  },
+  {
+    "id": "item_def",
+    "name": "バフ薬DEF",
+    "effect": "statBuff",
+    "stat": "def",
+    "value": 2,
+    "duration": "map",
+    "desc": "DEF+2(マップ中)"
+  },
+  {
+    "id": "item_int",
+    "name": "バフ薬INT",
+    "effect": "statBuff",
+    "stat": "int",
+    "value": 2,
+    "duration": "map",
+    "desc": "INT+2(マップ中)"
+  },
+  {
+    "id": "item_gold",
+    "name": "ゴールド",
+    "effect": "gold",
+    "value": 1,
+    "desc": "インターバルで使用"
+  }
+]

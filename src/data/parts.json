@@ -1,0 +1,1077 @@
+[
+  {
+    "_comment": "=== 火タグ C9 ==="
+  },
+  {
+    "id": 1,
+    "name": "猛撃",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "C",
+    "techRef": "猛撃"
+  },
+  {
+    "id": 2,
+    "name": "狙い撃ち",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "C",
+    "techRef": "狙い撃ち"
+  },
+  {
+    "id": 79,
+    "name": "炎連拳",
+    "type": "tech",
+    "techRef": "炎連拳",
+    "tag": "fire",
+    "rarity": "C"
+  },
+  {
+    "id": 78,
+    "name": "砲撃",
+    "type": "tech",
+    "techRef": "砲撃",
+    "tag": "fire",
+    "rarity": "C"
+  },
+  {
+    "id": 5,
+    "name": "衝動",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "C",
+    "desc": "撃破で衝動+1(最大6)。3消費でSTR/DEF/INT+3",
+    "effects": [
+      {
+        "trigger": "onKill",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "衝動",
+        "amount": 1,
+        "max": 6
+      },
+      {
+        "trigger": "always",
+        "type": "grantTech",
+        "tech": "衝動解放",
+        "cond": {
+          "counter": "衝動",
+          "min": 3
+        }
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "冷酷",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "C",
+    "desc": "HP半分以下の敵にATK+3",
+    "effects": [
+      {
+        "trigger": "onAttack",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "atk": 3
+        },
+        "cond": {
+          "targetHpPct": "<=50"
+        }
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "屍漁り",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "C",
+    "desc": "敵撃破時ドロップ率+10",
+    "effects": [
+      {
+        "trigger": "onKill",
+        "scope": "self",
+        "type": "dropBonus",
+        "value": 10
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "猛者の腕輪",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "C",
+    "desc": "STR+2",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "str": 2
+        }
+      }
+    ]
+  },
+  {
+    "id": 9,
+    "name": "戦鼓",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "C",
+    "desc": "隣接味方ATK+2(常時)",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "adjAlly",
+        "type": "statMod",
+        "mods": {
+          "atk": 2
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 火タグ U7 ==="
+  },
+  {
+    "id": 10,
+    "name": "焼き払い",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "U",
+    "techRef": "焼き払い"
+  },
+  {
+    "id": 11,
+    "name": "火計",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "U",
+    "techRef": "火計"
+  },
+  {
+    "id": 12,
+    "name": "烈火",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "U",
+    "techRef": "烈火"
+  },
+  {
+    "id": 13,
+    "name": "衝撃波",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "U",
+    "desc": "敵撃破時 隣接敵に飛散ダメージ6",
+    "effects": [
+      {
+        "trigger": "onKill",
+        "scope": "killAdjEnemy",
+        "type": "fixedDmg",
+        "value": 6
+      }
+    ]
+  },
+  {
+    "id": 14,
+    "name": "千里眼",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "U",
+    "desc": "射程+1(純射程1除外)",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "rangeExtend",
+        "value": 1,
+        "excludeMelee": true
+      }
+    ]
+  },
+  {
+    "id": 15,
+    "name": "透明マント",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "U",
+    "desc": "敵をすり抜けられる",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "ghostMove"
+      }
+    ]
+  },
+  {
+    "id": 16,
+    "name": "火薬",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "U",
+    "desc": "技命中時 火傷1付与",
+    "effects": [
+      {
+        "trigger": "onHit",
+        "scope": "target",
+        "type": "applyDebuff",
+        "debuff": {
+          "name": "火傷",
+          "turns": 1
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 火タグ R4 ==="
+  },
+  {
+    "id": 17,
+    "name": "爆炎",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "R",
+    "techRef": "爆炎"
+  },
+  {
+    "id": 18,
+    "name": "猛火",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "R",
+    "techRef": "猛火"
+  },
+  {
+    "id": 19,
+    "name": "吸命撃",
+    "type": "tech",
+    "tag": "fire",
+    "rarity": "R",
+    "techRef": "吸命撃"
+  },
+  {
+    "id": 20,
+    "name": "闘争本能",
+    "type": "skill",
+    "tag": "fire",
+    "rarity": "R",
+    "desc": "自ターンSTR5ごとにATK+1",
+    "effects": [
+      {
+        "trigger": "onAttack",
+        "scope": "self",
+        "type": "statScale",
+        "scaleStat": "str",
+        "divisor": 5,
+        "targetStat": "atk"
+      }
+    ]
+  },
+  {
+    "_comment": "=== 水タグ C9 ==="
+  },
+  {
+    "id": 22,
+    "name": "鉄壁の構え",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "C",
+    "techRef": "鉄壁の構え"
+  },
+  {
+    "id": 23,
+    "name": "脳天割り",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "C",
+    "techRef": "脳天割り"
+  },
+  {
+    "id": 24,
+    "name": "挑発",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "C",
+    "techRef": "挑発"
+  },
+  {
+    "id": 25,
+    "name": "水流の槍",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "C",
+    "techRef": "水流の槍"
+  },
+  {
+    "id": 26,
+    "name": "生命力",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "C",
+    "desc": "HP30%以下で被ダメ-4",
+    "effects": [
+      {
+        "trigger": "onDefend",
+        "scope": "self",
+        "type": "dmgReduce",
+        "value": 4,
+        "cond": {
+          "selfHpPct": "<=30"
+        }
+      }
+    ]
+  },
+  {
+    "id": 27,
+    "name": "体当たり",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "C",
+    "desc": "体当たりコマンド(固定2/1マス押出/回数無限)",
+    "effects": [
+      {
+        "trigger": "always",
+        "type": "grantTech",
+        "tech": "体当たり"
+      }
+    ]
+  },
+  {
+    "id": 28,
+    "name": "鉄の盾",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "C",
+    "desc": "DEF+2",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "def": 2
+        }
+      }
+    ]
+  },
+  {
+    "id": 29,
+    "name": "体力の護符",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "C",
+    "desc": "HP+5",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "hp": 5
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 水タグ U7 ==="
+  },
+  {
+    "id": 30,
+    "name": "救出",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "U",
+    "techRef": "救出"
+  },
+  {
+    "id": 31,
+    "name": "ぶちかまし",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "U",
+    "techRef": "ぶちかまし"
+  },
+  {
+    "id": 32,
+    "name": "氷結",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "U",
+    "techRef": "氷結"
+  },
+  {
+    "id": 33,
+    "name": "反逆の意志",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "U",
+    "desc": "被弾で反逆+1。6消費で2回行動",
+    "effects": [
+      {
+        "trigger": "onDamaged",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "反逆",
+        "amount": 1,
+        "max": 6
+      },
+      {
+        "trigger": "always",
+        "type": "grantTech",
+        "tech": "反逆発動",
+        "cond": {
+          "counter": "反逆",
+          "min": 6
+        }
+      }
+    ]
+  },
+  {
+    "id": 34,
+    "name": "生命吸収",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "U",
+    "desc": "攻撃するたびHP5回復",
+    "effects": [
+      {
+        "trigger": "onAttack",
+        "scope": "self",
+        "type": "heal",
+        "value": 5
+      }
+    ]
+  },
+  {
+    "id": 35,
+    "name": "棘の鎧",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "U",
+    "desc": "攻撃してきた敵に固定6ダメ",
+    "effects": [
+      {
+        "trigger": "onDamaged",
+        "scope": "attacker",
+        "type": "fixedDmg",
+        "value": 6
+      }
+    ]
+  },
+  {
+    "id": 36,
+    "name": "鮮血の鎧",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "U",
+    "desc": "攻撃命中時 次ターンDEF+3",
+    "effects": [
+      {
+        "trigger": "onHit",
+        "scope": "self",
+        "type": "delayedStatMod",
+        "mods": {
+          "def": 3
+        },
+        "delay": "nextTurn"
+      }
+    ]
+  },
+  {
+    "_comment": "=== 水タグ R4 ==="
+  },
+  {
+    "id": 37,
+    "name": "要塞化",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "R",
+    "techRef": "要塞化"
+  },
+  {
+    "id": 38,
+    "name": "アクアウォール",
+    "type": "tech",
+    "tag": "water",
+    "rarity": "R",
+    "techRef": "アクアウォール"
+  },
+  {
+    "id": 39,
+    "name": "迎撃体制",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "R",
+    "desc": "敵ターン最初の被弾時先制+技使用可/DEF15",
+    "effects": [
+      {
+        "trigger": "onEnemyAttackBefore",
+        "scope": "self",
+        "type": "preemptive",
+        "perTurn": true,
+        "cond": {
+          "stat": "def",
+          "op": ">=",
+          "val": 15
+        }
+      }
+    ]
+  },
+  {
+    "id": 40,
+    "name": "将軍の大盾",
+    "type": "skill",
+    "tag": "water",
+    "rarity": "R",
+    "desc": "DEF+6/MOV-1",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "def": 6,
+          "mov": -1
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 風タグ C9 ==="
+  },
+  {
+    "id": 80,
+    "name": "ヒール",
+    "type": "tech",
+    "techRef": "ヒール",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  {
+    "id": 81,
+    "name": "風の矢",
+    "type": "tech",
+    "techRef": "風の矢",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  {
+    "id": 82,
+    "name": "ショック",
+    "type": "tech",
+    "techRef": "ショック",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  {
+    "id": 43,
+    "name": "忘却の声",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "C",
+    "techRef": "忘却の声"
+  },
+  {
+    "id": 45,
+    "name": "簡易縫合",
+    "type": "tech",
+    "tag": "light",
+    "rarity": "C",
+    "techRef": "簡易縫合"
+  },
+  {
+    "id": 83,
+    "name": "聖域の祈り",
+    "type": "tech",
+    "techRef": "聖域の祈り",
+    "tag": "wind",
+    "rarity": "C"
+  },
+  {
+    "id": 46,
+    "name": "観察眼",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "C",
+    "desc": "デバフ命中+15%",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "debuffHitBonus",
+        "value": 15
+      }
+    ]
+  },
+  {
+    "id": 47,
+    "name": "共鳴",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "C",
+    "desc": "回復技使用時 対象隣接味方HP5回復",
+    "effects": [
+      {
+        "trigger": "onHeal",
+        "scope": "adjTarget",
+        "type": "heal",
+        "value": 5
+      }
+    ]
+  },
+  {
+    "id": 48,
+    "name": "守護",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "C",
+    "desc": "隣接味方の被ダメ-2(常時)",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "adjAlly",
+        "type": "dmgReduce",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "id": 49,
+    "name": "導きの腕輪",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "C",
+    "desc": "INT+2",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "int": 2
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 風タグ U7 ==="
+  },
+  {
+    "id": 50,
+    "name": "風の祈り",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "U",
+    "techRef": "風の祈り"
+  },
+  {
+    "id": 44,
+    "name": "稲妻",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "U",
+    "techRef": "稲妻"
+  },
+  {
+    "id": 84,
+    "name": "バインド",
+    "type": "tech",
+    "techRef": "バインド",
+    "tag": "wind",
+    "rarity": "U"
+  },
+  {
+    "id": 53,
+    "name": "踊り",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "U",
+    "techRef": "踊り"
+  },
+  {
+    "id": 54,
+    "name": "治癒の知識",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "U",
+    "desc": "回復量+10",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "healBonus",
+        "value": 10
+      }
+    ]
+  },
+  {
+    "id": 55,
+    "name": "風まとい",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "U",
+    "desc": "ターン終了時 隣接味方デバフ解除",
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "adjAlly",
+        "type": "cleanse"
+      }
+    ]
+  },
+  {
+    "id": 56,
+    "name": "弱体の杖",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "U",
+    "desc": "隣接敵INT-2/DEF-2(常時)",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "adjEnemy",
+        "type": "statMod",
+        "mods": {
+          "int": -2,
+          "def": -2
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 風タグ R4 ==="
+  },
+  {
+    "id": 57,
+    "name": "女神の祈り",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "R",
+    "techRef": "女神の祈り"
+  },
+  {
+    "id": 58,
+    "name": "嵐の一撃",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "R",
+    "techRef": "嵐の一撃"
+  },
+  {
+    "id": 59,
+    "name": "魔力の手",
+    "type": "tech",
+    "tag": "wind",
+    "rarity": "R",
+    "techRef": "魔力の手"
+  },
+  {
+    "id": 60,
+    "name": "風の加護",
+    "type": "skill",
+    "tag": "wind",
+    "rarity": "R",
+    "desc": "隣接味方ATK+3/INT+3/DEF+3",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "adjAlly",
+        "type": "statMod",
+        "mods": {
+          "atk": 3,
+          "int": 3,
+          "def": 3
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 光タグ C4 ==="
+  },
+  {
+    "id": 61,
+    "name": "投擲",
+    "type": "tech",
+    "tag": "light",
+    "rarity": "C",
+    "techRef": "投擲"
+  },
+  {
+    "id": 62,
+    "name": "殴突",
+    "type": "tech",
+    "tag": "none",
+    "rarity": "C",
+    "techRef": "殴突"
+  },
+  {
+    "id": 63,
+    "name": "護りの加護",
+    "type": "skill",
+    "tag": "light",
+    "rarity": "C",
+    "desc": "HP30%以下で攻撃1回無効(消滅)",
+    "effects": [
+      {
+        "trigger": "onDamaged",
+        "scope": "self",
+        "type": "negate",
+        "cond": {
+          "selfHpPct": "<=30"
+        },
+        "once": true,
+        "consume": true
+      }
+    ]
+  },
+  {
+    "id": 64,
+    "name": "健脚のブーツ",
+    "type": "skill",
+    "tag": "light",
+    "rarity": "C",
+    "desc": "MOV+1",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "mov": 1
+        }
+      }
+    ]
+  },
+  {
+    "_comment": "=== 光タグ U2 ==="
+  },
+  {
+    "id": 65,
+    "name": "無手の誇り",
+    "type": "skill",
+    "tag": "light",
+    "rarity": "U",
+    "desc": "他にCしか持っていないならSTR+3/INT+3/DEF+3",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "str": 3,
+          "int": 3,
+          "def": 3
+        },
+        "cond": {
+          "barehanded": true
+        }
+      }
+    ]
+  },
+  {
+    "id": 66,
+    "name": "写し身",
+    "type": "skill",
+    "tag": "light",
+    "rarity": "U",
+    "desc": "取得時 自スキル1つを複製",
+    "effects": [
+      {
+        "trigger": "onAcquire",
+        "type": "system",
+        "system": "copySkill"
+      }
+    ]
+  },
+  {
+    "_comment": "=== 光タグ R1 ==="
+  },
+  {
+    "id": 67,
+    "name": "天使の祝福",
+    "type": "skill",
+    "tag": "light",
+    "rarity": "R",
+    "desc": "呪い全除去。HP+7/STR-2/INT+2/DEF+2/MOV+2/飛行",
+    "effects": [
+      {
+        "trigger": "onAcquire",
+        "type": "system",
+        "system": "angel"
+      }
+    ]
+  },
+  {
+    "_comment": "=== 闇タグ C2 ==="
+  },
+  {
+    "id": 68,
+    "name": "異形の翼",
+    "type": "skill",
+    "tag": "dark",
+    "rarity": "C",
+    "desc": "飛行と呪い1を得る",
+    "effects": [
+      {
+        "trigger": "onAcquire",
+        "type": "system",
+        "system": "darkWings"
+      }
+    ]
+  },
+  {
+    "id": 69,
+    "name": "呪いの仮面",
+    "type": "skill",
+    "tag": "dark",
+    "rarity": "C",
+    "desc": "STR/INT/DEFから+2選択。呪い1",
+    "effects": [
+      {
+        "trigger": "onAcquire",
+        "type": "system",
+        "system": "cursedMask"
+      }
+    ]
+  },
+  {
+    "_comment": "=== 闇タグ U3 ==="
+  },
+  {
+    "id": 70,
+    "name": "血の代償",
+    "type": "tech",
+    "tag": "dark",
+    "rarity": "U",
+    "techRef": "血の代償"
+  },
+  {
+    "id": 71,
+    "name": "侵食",
+    "type": "skill",
+    "tag": "dark",
+    "rarity": "U",
+    "desc": "STR+4/INT+4/呪い3",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statMod",
+        "mods": {
+          "str": 4,
+          "int": 4
+        }
+      },
+      {
+        "trigger": "turnStart",
+        "scope": "self",
+        "type": "dotDamage",
+        "value": 3
+      }
+    ],
+    "locked": true
+  },
+  {
+    "id": 72,
+    "name": "魔物の首輪",
+    "type": "skill",
+    "tag": "dark",
+    "rarity": "U",
+    "desc": "魔物選択→ステ変動。EXP+5必要",
+    "effects": [
+      {
+        "trigger": "onAcquire",
+        "type": "system",
+        "system": "monsterCollar"
+      }
+    ]
+  },
+  {
+    "_comment": "=== 闇タグ R1 ==="
+  },
+  {
+    "id": 73,
+    "name": "悪魔との契約",
+    "type": "skill",
+    "tag": "dark",
+    "rarity": "R",
+    "desc": "呪い=Lv数+毎LvUP+1。苦痛の印/狂気のやすらぎ/解呪を得る",
+    "effects": [
+      {
+        "trigger": "onAcquire",
+        "type": "system",
+        "system": "devilPact",
+        "counter": "呪い",
+        "grantPartIds": [74, 75, 76]
+      },
+      {
+        "trigger": "onLevelUp",
+        "type": "counterGen",
+        "counter": "呪い",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "_comment": "=== 特殊（悪魔との契約獲得） ==="
+  },
+  {
+    "id": 74,
+    "name": "苦痛の印",
+    "type": "skill",
+    "tag": "",
+    "rarity": "",
+    "desc": "呪いカウンターの数だけSTR/INT上昇",
+    "effects": [
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statScale",
+        "stat": "str",
+        "source": "counter",
+        "counter": "呪い",
+        "mult": 1
+      },
+      {
+        "trigger": "always",
+        "scope": "self",
+        "type": "statScale",
+        "stat": "int",
+        "source": "counter",
+        "counter": "呪い",
+        "mult": 1
+      }
+    ],
+    "noSlot": true
+  },
+  {
+    "id": 75,
+    "name": "狂気のやすらぎ",
+    "type": "tech",
+    "tag": "dark",
+    "rarity": "",
+    "techRef": "狂気のやすらぎ"
+  },
+  {
+    "id": 76,
+    "name": "解呪",
+    "type": "tech",
+    "tag": "dark",
+    "rarity": "",
+    "techRef": "解呪"
+  },
+  {
+    "id": 77,
+    "name": "シールドバッシュ",
+    "type": "tech",
+    "techRef": "シールドバッシュ",
+    "tag": "water",
+    "rarity": "C"
+  }
+]

@@ -1,0 +1,210 @@
+[
+  {
+    "name": "衝動",
+    "persistent": false,
+    "buff": true,
+    "display": "full",
+    "max": 99,
+    "effects": []
+  },
+  {
+    "name": "反逆",
+    "persistent": false,
+    "buff": true,
+    "display": "full",
+    "max": 99,
+    "effects": []
+  },
+  {
+    "name": "呪い",
+    "persistent": true,
+    "display": "full",
+    "max": 99,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "dotDamage",
+        "mods": {},
+        "source": "counter",
+        "counter": "呪い",
+        "mult": 1
+      }
+    ]
+  },
+  {
+    "name": "祝福",
+    "persistent": false,
+    "buff": true,
+    "display": "full",
+    "max": 99,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "heal",
+        "mods": {},
+        "source": "counter",
+        "counter": "祝福",
+        "mult": 1
+      },
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "mods": {},
+        "counter": "祝福",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "火傷",
+    "persistent": false,
+    "debuff": true,
+    "display": "full",
+    "max": 99,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "dotDamage",
+        "mods": {},
+        "value": 6
+      },
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "mods": {},
+        "counter": "火傷",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "反撃不能",
+    "persistent": false,
+    "debuff": true,
+    "status": "反撃不能",
+    "display": "nameOnly",
+    "max": 1,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "反撃不能",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "技不能",
+    "persistent": false,
+    "debuff": true,
+    "status": "技不能",
+    "display": "nameOnly",
+    "max": 1,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "技不能",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "移動不能",
+    "persistent": false,
+    "debuff": true,
+    "status": "移動不能",
+    "display": "nameOnly",
+    "max": 1,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "移動不能",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "ATK低下",
+    "persistent": false,
+    "display": "hidden",
+    "max": 99,
+    "effects": [
+      {
+        "trigger": "always",
+        "type": "statMod",
+        "mods": { "atk": -3 }
+      },
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "ATK低下",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "DEF低下",
+    "persistent": false,
+    "display": "hidden",
+    "max": 99,
+    "effects": [
+      {
+        "trigger": "always",
+        "type": "statMod",
+        "mods": { "def": -3 }
+      },
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "DEF低下",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "タゲ固定",
+    "persistent": false,
+    "debuff": true,
+    "status": "タゲ固定",
+    "display": "nameOnly",
+    "max": 1,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "タゲ固定",
+        "amount": -1
+      }
+    ]
+  },
+  {
+    "name": "氷結",
+    "persistent": false,
+    "debuff": true,
+    "status": "行動不能",
+    "display": "nameOnly",
+    "max": 1,
+    "effects": [
+      {
+        "trigger": "turnEnd",
+        "scope": "self",
+        "type": "counterGen",
+        "counter": "氷結",
+        "amount": -1
+      }
+    ]
+  }
+]

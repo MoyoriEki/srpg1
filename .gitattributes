@@ -1,0 +1,4 @@
+# リポジトリ内は LF で統一（GitHub API 経由のコミットは常に LF のため、
+# ローカル CRLF との差分ノイズを防ぐ）。チェックアウトは OS ネイティブ。
+* text=auto
+*.json text eol=lf

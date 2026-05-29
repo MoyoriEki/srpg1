@@ -1,0 +1,301 @@
+[
+  {
+    "id": "p01",
+    "name": "マルタ",
+    "tags": [
+      "fire",
+      "water"
+    ],
+    "base": {
+      "hp": 35,
+      "str": 8,
+      "def": 9,
+      "int": 7,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "強撃",
+      "シールドバッシュ"
+    ],
+    "trait": null,
+    "traitDesc": null,
+    "color": "#3b82f6"
+  },
+  {
+    "id": "p02",
+    "name": "ベルグ",
+    "tags": [
+      "fire",
+      "water"
+    ],
+    "base": {
+      "hp": 38,
+      "str": 8,
+      "def": 9,
+      "int": 7,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "猛撃",
+      "鉄壁の構え"
+    ],
+    "trait": null,
+    "traitDesc": null,
+    "color": "#1e40af"
+  },
+  {
+    "id": "p03",
+    "name": "ロッツ",
+    "tags": [
+      "fire",
+      "water"
+    ],
+    "base": {
+      "hp": 36,
+      "str": 8,
+      "def": 9,
+      "int": 7,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "連撃",
+      "挑発"
+    ],
+    "trait": "horsemanship",
+    "traitDesc": "CC時、騎馬に乗るか選べる",
+    "color": "#ea580c"
+  },
+  {
+    "id": "p04",
+    "name": "ブリキ",
+    "tags": [
+      "fire",
+      "water"
+    ],
+    "base": {
+      "hp": 40,
+      "str": 7,
+      "def": 10,
+      "int": 7,
+      "mov": 4,
+      "pp": 1
+    },
+    "initTechs": [
+      "盾殴り",
+      "鉄壁の構え"
+    ],
+    "trait": "heavyArmor",
+    "traitDesc": "所持品枠+1",
+    "color": "#f59e0b"
+  },
+  {
+    "id": "p05",
+    "name": "シヴ",
+    "tags": [
+      "fire",
+      "water"
+    ],
+    "base": {
+      "hp": 37,
+      "str": 8,
+      "def": 9,
+      "int": 7,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "猛撃",
+      "脳天割り"
+    ],
+    "trait": "oneManArmy",
+    "traitDesc": "自ターンSTR+2",
+    "color": "#dc2626"
+  },
+  {
+    "id": "p06",
+    "name": "ジンク",
+    "tags": [
+      "water",
+      "wind"
+    ],
+    "base": {
+      "hp": 38,
+      "str": 7,
+      "def": 8,
+      "int": 9,
+      "mov": 4,
+      "pp": 1
+    },
+    "initTechs": [
+      "盾殴り",
+      "忘却の声"
+    ],
+    "trait": "discovery",
+    "traitDesc": "少しU率が上がる",
+    "color": "#0ea5e9"
+  },
+  {
+    "id": "p07",
+    "name": "ペレグリン",
+    "tags": [
+      "water",
+      "wind"
+    ],
+    "base": {
+      "hp": 33,
+      "str": 7,
+      "def": 8,
+      "int": 9,
+      "mov": 4,
+      "pp": 3
+    },
+    "initTechs": [
+      "挑発",
+      "祈り"
+    ],
+    "trait": "strongLegs",
+    "traitDesc": "踊り+3回",
+    "color": "#6366f1"
+  },
+  {
+    "id": "p08",
+    "name": "セイル",
+    "tags": [
+      "water",
+      "wind"
+    ],
+    "base": {
+      "hp": 28,
+      "str": 5,
+      "def": 6,
+      "int": 7,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "水流の槍",
+      "稲妻"
+    ],
+    "trait": "lateBloom",
+    "traitDesc": "マップクリア時DEF+1&INT+1",
+    "color": "#a78bfa"
+  },
+  {
+    "id": "p09",
+    "name": "ゼン",
+    "tags": [
+      "water",
+      "wind"
+    ],
+    "base": {
+      "hp": 37,
+      "str": 6,
+      "def": 9,
+      "int": 9,
+      "mov": 4,
+      "pp": 1
+    },
+    "initTechs": [
+      "鉄壁の構え",
+      "祈り"
+    ],
+    "trait": "pacifist",
+    "traitDesc": "撃破0のループ中INT+2",
+    "color": "#14b8a6"
+  },
+  {
+    "id": "p10",
+    "name": "トーヴァ",
+    "tags": [
+      "wind",
+      "fire"
+    ],
+    "base": {
+      "hp": 34,
+      "str": 9,
+      "def": 7,
+      "int": 8,
+      "mov": 4,
+      "pp": 3
+    },
+    "initTechs": [
+      "よろめきの風",
+      "狙い撃ち"
+    ],
+    "trait": null,
+    "traitDesc": null,
+    "color": "#22c55e"
+  },
+  {
+    "id": "p11",
+    "name": "ヤシュカ",
+    "tags": [
+      "wind",
+      "fire"
+    ],
+    "base": {
+      "hp": 32,
+      "str": 8,
+      "def": 6,
+      "int": 9,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "祈り",
+      "強弓"
+    ],
+    "trait": "exorcism",
+    "traitDesc": "マップ間に呪いカウンター1除去",
+    "color": "#8b5cf6"
+  },
+  {
+    "id": "p12",
+    "name": "ノラ",
+    "tags": [
+      "wind",
+      "fire"
+    ],
+    "base": {
+      "hp": 35,
+      "str": 9,
+      "def": 7,
+      "int": 8,
+      "mov": 5,
+      "pp": 3
+    },
+    "initTechs": [
+      "よろめきの風",
+      "連撃"
+    ],
+    "trait": "swiftFoot",
+    "traitDesc": "MOV+1",
+    "color": "#f97316"
+  },
+  {
+    "id": "p13",
+    "name": "モグラ",
+    "tags": [
+      "wind",
+      "fire"
+    ],
+    "base": {
+      "hp": 32,
+      "str": 8,
+      "def": 8,
+      "int": 8,
+      "mov": 4,
+      "pp": 2
+    },
+    "initTechs": [
+      "忘却の声",
+      "狙い撃ち"
+    ],
+    "trait": "monsterEater",
+    "traitDesc": "敵撃破時HP5回復",
+    "color": "#84cc16"
+  }
+]

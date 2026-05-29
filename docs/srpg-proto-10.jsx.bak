@@ -1,0 +1,2130 @@
+import { useState, useEffect, useRef } from "react";
+
+// ═══════════════════════════════════════════════════════
+//  Proto 2.0 — ループ構造検証版
+//  6ステージ構成, HP持ち越し, インターバル, ロスト
+// ═══════════════════════════════════════════════════════
+
+const COLS=20, ROWS=15, TILE=48, PURSUIT_RATE_PER_INT=10, STEP_MS=80;
+const MAP_W=COLS*TILE, MAP_H=ROWS*TILE;
+const GW=1280, GH=720;
+const EXP_PER_HIT=5, EXP_POOL=20, LEVEL_CAP=13;
+const BASE_DEBUFF_HIT=80, DEBUFF_HIT_PER_TEC=5;
+
+// ═══ TERRAIN ═══
+const T=[[0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2],[0,0,0,0,2,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2],[0,0,0,0,0,0,2,0,0,0,0,0,0,0,2,2,2,2,2,2],[0,0,0,0,0,2,0,0,0,0,0,0,0,0,2,2,2,2,2,2],[0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,2,2,2,2,2],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2],[2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2],[2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2],[2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2],[2,2,2,2,2,0,0,0,0,0,2,0,0,0,0,0,2,0,0,0],[2,2,2,2,2,0,0,0,2,2,2,0,0,0,0,0,0,0,0,0],[2,2,2,2,2,0,0,0,2,2,2,0,0,0,2,0,0,0,0,0],[2,2,2,2,2,0,0,0,2,2,2,0,0,2,2,0,0,0,0,0]];
+const TCOL={0:"#4a7c34",1:"#2d5a1e",2:"#6b7280",3:"#8b7355"};
+const TDEF={0:0,1:1,2:0,3:2};
+const TMOV={0:1,1:2,2:99,3:1};
+const TNAME={0:"平地",1:"森",2:"山",3:"砦"};
+
+// ═══ TECH DEFINITIONS (42種+敵用) ═══
+const TECHS={
+  // 火力
+  "猛撃":{name:"猛撃",mod:1.5,rangeMin:1,rangeMax:1,uses:3,maxUses:3,cond:null,debuff:null,heal:0,desc:"×1.5 射程1"},
+  "狙い撃ち":{name:"狙い撃ち",mod:1.3,rangeMin:2,rangeMax:2,uses:3,maxUses:3,cond:null,debuff:null,heal:0,desc:"×1.3 射程2"},
+  // 防御
+  "シールドバッシュ":{name:"シールドバッシュ",mod:1.3,rangeMin:1,rangeMax:1,uses:3,maxUses:3,cond:null,debuff:{name:"ATK低下",turns:1},heal:0,desc:"×1.3 ATK-3付与"},
+  "鉄壁の構え":{name:"鉄壁の構え",mod:0,rangeMin:0,rangeMax:0,uses:3,maxUses:3,cond:null,debuff:null,heal:0,desc:"DEF+4(1T) 待機",selfEnd:true},
+  "挑発":{name:"挑発",mod:0,rangeMin:1,rangeMax:2,uses:2,maxUses:2,cond:null,debuff:{name:"タゲ固定",turns:1},heal:0,debuffOnly:true,desc:"射程1-2 タゲ固定(1T)"},
+  // 支援
+  "ヒール":{name:"ヒール",mod:1.0,rangeMin:1,rangeMax:1,uses:3,maxUses:3,cond:null,debuff:null,heal:0,tecHeal:true,desc:"INT×1.0回復 射程1"},
+  "ブレイク":{name:"ブレイク",mod:0.8,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:{name:"反撃不能",turns:1,baseHit:75},heal:0,tecRef:true,tecRange:3,desc:"INT×0.8 射程INT÷3 反撃封じ(75%)"},
+  "リフレッシュ":{name:"リフレッシュ",mod:0,rangeMin:1,rangeMax:1,uses:1,maxUses:1,cond:null,debuff:null,heal:0,desc:"射程1 再行動付与"},
+  // 汎用
+  "強撃":{name:"強撃",mod:1.3,rangeMin:1,rangeMax:1,uses:4,maxUses:4,cond:null,debuff:null,heal:0,desc:"×1.3 射程1"},
+  // ── v4追加技 ──
+  "投げ飛ばし":{name:"投げ飛ばし",mod:1.3,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:null,heal:0,push:1,desc:"×1.3 射程1 1マス押出"},
+  "分け与え":{name:"分け与え",mod:0,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:null,heal:0,giveHeal:13,hpCost:6,desc:"HP6消費 対象13回復 射程1"},
+  "救出":{name:"救出",mod:0,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:null,heal:0,rescue:true,desc:"射程1 味方を担ぐ"},
+  "連撃":{name:"連撃",mod:0.8,rangeMin:1,rangeMax:1,uses:3,maxUses:3,cond:null,debuff:null,heal:0,hits:2,desc:"×0.8×2 射程1"},
+  "強弓":{name:"強弓",mod:1.5,rangeMin:2,rangeMax:3,uses:2,maxUses:2,cond:null,debuff:null,heal:0,desc:"×1.5 射程2-3"},
+  "砕撃":{name:"砕撃",mod:0,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:null,heal:0,fixed:16,hpCost:6,desc:"HP6消費 固定16ダメ 射程1"},
+  "火計":{name:"火計",mod:0,rangeMin:2,rangeMax:2,uses:2,maxUses:2,cond:null,debuff:{name:"火傷",turns:2,autoHit:true},heal:0,fixed:8,desc:"固定8ダメ+火傷2[必中] 射程2"},
+  "吸命撃":{name:"吸命撃",mod:1.0,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:null,heal:0,drain:0.5,desc:"×1.0 射程1 与ダメ50%回復"},
+  "シール":{name:"シール",mod:0.8,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:{name:"技封じ",turns:1,baseHit:80},heal:0,tecRef:true,tecRange:3,desc:"INT×0.8 射程INT÷3 技封じ(80%)"},
+  "バインド":{name:"バインド",mod:0,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:null,debuff:{name:"移動封じ",turns:1,baseHit:70},heal:0,debuffOnly:true,tecRange:3,desc:"射程INT÷3 移動封じ(70%)"},
+  "ウィンドアロー":{name:"ウィンドアロー",mod:0.8,rangeMin:2,rangeMax:2,uses:2,maxUses:2,cond:null,debuff:null,heal:0,tecRef:true,defHalf:true,desc:"INT×0.8 DEF半減 射程2"},
+  "リブロー":{name:"リブロー",mod:1.0,rangeMin:1,rangeMax:1,uses:1,maxUses:1,cond:null,debuff:null,heal:0,tecHeal:true,tecRange:3,desc:"INT×1.0回復 射程INT÷3"},
+  "要塞化":{name:"要塞化",mod:0,rangeMin:0,rangeMax:0,uses:1,maxUses:1,cond:null,debuff:null,heal:0,selfEnd:true,fortify:true,desc:"DEF2倍(3T) 待機"},
+  "サンダーボルト":{name:"サンダーボルト",mod:0.7,rangeMin:3,rangeMax:10,uses:3,maxUses:3,cond:null,debuff:null,heal:0,tecRef:true,defIgnore:true,desc:"INT×0.7 DEF無視 射程3-10"},
+  // ── 範囲攻撃技 ──
+  "烈火":{name:"烈火",mod:2.0,rangeMin:1,rangeMax:2,uses:1,maxUses:1,cond:null,debuff:null,heal:0,aoe:"dir_line",desc:"×2.0 前方2マス直線"},
+  "爆炎":{name:"爆炎",mod:2.0,rangeMin:1,rangeMax:2,uses:1,maxUses:1,cond:null,debuff:null,heal:0,aoe:"dir_cross",desc:"×2.0 前方2マス+横6マス"},
+  "女神の祝福":{name:"女神の祝福",mod:1.0,rangeMin:0,rangeMax:0,uses:1,maxUses:1,cond:null,debuff:null,heal:0,aoe:"healArea",tecHeal:true,selfEnd:true,desc:"INT÷2範囲内味方TEC分回復"},
+  // 敵専用
+  "渾身":{name:"渾身",mod:2.0,rangeMin:1,rangeMax:1,uses:2,maxUses:2,cond:{stat:"str",val:15},debuff:null,heal:0,desc:"×2.0 要ATK15"},
+  "烈火(敵)":{name:"烈火(敵)",mod:3.0,rangeMin:1,rangeMax:1,uses:1,maxUses:1,cond:{stat:"str",val:20},debuff:null,heal:0,desc:"×3.0 要ATK20"},
+  "祈り":{name:"祈り",mod:0,rangeMin:1,rangeMax:1,uses:3,maxUses:3,cond:null,debuff:null,heal:15,desc:"15回復"},
+  "咆哮":{name:"咆哮",mod:1.0,rangeMin:1,rangeMax:2,uses:2,maxUses:2,cond:null,debuff:{name:"ATK低下",turns:2},heal:0,desc:"×1.0 射程1-2 ATK低下(2T)"},
+  "大爆発":{name:"大爆発",mod:3.0,rangeMin:1,rangeMax:2,uses:1,maxUses:1,cond:null,debuff:null,heal:0,desc:"×3.0 射程1-2 チャージ"},
+};
+
+// ═══ CLASS SYSTEM ═══
+const CLASS_DATA={
+  "冒険者":{tier:"初級",growth:{hp:2.5,str:0.8,def:0.8,int:0.8},ts:2,ss:1,is:1},
+  "炎闘士":{tier:"中級",growth:{hp:2.5,str:1.3,def:0.8,int:0.5},ts:3,ss:2,is:1,tag:"fire"},
+  "水盾士":{tier:"中級",growth:{hp:3.0,str:0.5,def:1.3,int:0.8},ts:3,ss:2,is:1,tag:"water"},
+  "風術師":{tier:"中級",growth:{hp:2.0,str:0.8,def:0.5,int:1.3},ts:3,ss:2,is:1,tag:"wind"},
+  "スレイヤー":{tier:"上級",trait:"canto",growth:{hp:3.0,str:1.5,def:0.8,int:0.5},ts:6,ss:4,is:3,rMin:1,rMax:1},
+  "ヴァンガード":{tier:"上級",trait:"revenge",growth:{hp:3.5,str:1.0,def:1.3,int:0.6},ts:5,ss:4,is:4,rMin:1,rMax:1},
+  "フォートレス":{tier:"上級",trait:"miracle",growth:{hp:4.0,str:0.5,def:1.6,int:0.8},ts:5,ss:4,is:4,rMin:1,rMax:1},
+  "プロテクター":{tier:"上級",trait:"shieldAura",growth:{hp:3.0,str:0.5,def:1.3,int:1.0},ts:6,ss:4,is:3,rMin:1,rMax:2},
+  "ソーサラー":{tier:"上級",trait:"rangeBoost",growth:{hp:2.0,str:1.3,def:0.5,int:1.2},ts:6,ss:4,is:3,rMin:2,rMax:2},
+  "オラクル":{tier:"上級",trait:"healBoost",growth:{hp:2.0,str:0.8,def:0.5,int:1.3},ts:7,ss:4,is:2,rMin:1,rMax:1},
+};
+const MID_CC={"fire":"炎闘士","water":"水盾士","wind":"風術師"};
+const ADV_CC={"炎闘士_water":["スレイヤー","ヴァンガード"],"炎闘士_wind":["スレイヤー","ソーサラー"],
+  "水盾士_fire":["フォートレス","ヴァンガード"],"水盾士_wind":["フォートレス","プロテクター"],
+  "風術師_fire":["オラクル","ソーサラー"],"風術師_water":["オラクル","プロテクター"]};
+function getSlots(unit){const c=CLASS_DATA[unit.cls];const b=unit._bonusSlots||{t:0,s:0,i:0};return c?{t:c.ts+b.t,s:999,i:c.is+b.i}:{t:2+b.t,s:999,i:1+b.i};}
+function getCCOptions(unit){
+  if(unit.level===5&&unit.cls==="冒険者")return{type:"mid",opts:unit.tags.map(t=>MID_CC[t])};
+  if(unit.level===10&&CLASS_DATA[unit.cls]?.tier==="中級"){
+    const midTag=CLASS_DATA[unit.cls].tag;const other=unit.tags.find(t=>t!==midTag);
+    return{type:"adv",opts:ADV_CC[`${unit.cls}_${other}`]||[]};}
+  return null;
+}
+function applyCC(unit,newCls){const u={...unit};u.cls=newCls;
+  const cd=CLASS_DATA[newCls];if(cd?.rMin!==undefined){u.rangeMin=cd.rMin;u.rangeMax=cd.rMax;}
+  if(cd?.mov)u.mov=cd.mov;
+  if(cd?.pp!==undefined)u.pp=(u.pp||0)+cd.pp;
+  const ccBonus={
+    "炎闘士":{hp:2,str:2,def:1,int:0},"水盾士":{hp:4,str:0,def:2,int:0},"風術師":{hp:2,str:1,def:0,int:2},
+    "スレイヤー":{hp:4,str:4,def:1,int:-1},"ヴァンガード":{hp:5,str:2,def:2,int:0},
+    "フォートレス":{hp:8,str:-1,def:4,int:1},"プロテクター":{hp:5,str:-1,def:2,int:2},
+    "オラクル":{hp:3,str:0,def:-1,int:4},"ソーサラー":{hp:0,str:2,def:-1,int:2}};
+  const b=ccBonus[newCls];if(b){u.maxHp+=b.hp;u.hp+=b.hp;u.str+=b.str;u.def+=b.def;u.int+=b.int;}return u;}
+
+// ═══ BUILD PARTS (61種, v4準拠) ═══
+const ALL_PARTS=[
+  // ── 火タグ C9 ──
+  {id:1,type:"tech",name:"猛撃",tag:"fire",rarity:"C",desc:"×1.5/射1/回3"},
+  {id:2,type:"tech",name:"狙い撃ち",tag:"fire",rarity:"C",desc:"×1.3/射2/回3"},
+  {id:3,type:"tech",name:"連撃",tag:"fire",rarity:"C",desc:"×0.8×2/射1/回3"},
+  {id:4,type:"tech",name:"強弓",tag:"fire",rarity:"C",desc:"×1.5/射2-3/回2"},
+  {id:5,type:"skill",name:"集中",tag:"fire",rarity:"C",stat:null,val:0,desc:"追撃率+25%"},
+  {id:6,type:"skill",name:"冷酷",tag:"fire",rarity:"C",stat:null,val:0,desc:"HP半分以下の敵にATK+3"},
+  {id:7,type:"item",name:"猛者の腕輪",tag:"fire",rarity:"C",stat:"str",val:3,desc:"ATK+3"},
+  {id:8,type:"item",name:"戦鼓",tag:"fire",rarity:"C",stat:null,val:0,desc:"隣接味方ATK+2(常時)"},
+  {id:9,type:"item",name:"火薬",tag:"fire",rarity:"C",stat:null,val:0,desc:"射程2↑技命中時 火傷2付与"},
+  // ── 火タグ U6 ──
+  {id:10,type:"tech",name:"投げ飛ばし",tag:"fire",rarity:"U",desc:"×1.3/射1/回2/1マス押出"},
+  {id:11,type:"tech",name:"烈火",tag:"fire",rarity:"U",desc:"×2.0/射1-2/縦貫通範囲"},
+  {id:12,type:"tech",name:"火計",tag:"fire",rarity:"U",desc:"固定8ダメ+火傷2/射2/回2"},
+  {id:13,type:"skill",name:"知略",tag:"fire",rarity:"U",stat:null,val:0,desc:"ATK攻撃時INT÷3加算"},
+  {id:14,type:"skill",name:"血風",tag:"fire",rarity:"U",stat:null,val:0,desc:"敵撃破時 隣接敵にATK×0.3"},
+  {id:15,type:"item",name:"長弓",tag:"fire",rarity:"U",stat:null,val:0,desc:"射程+1拡張(射1除外)"},
+  // ── 火タグ R3 ──
+  {id:16,type:"tech",name:"爆炎",tag:"fire",rarity:"R",desc:"×2.0/範囲攻撃/回1"},
+  {id:17,type:"skill",name:"闘争本能",tag:"fire",rarity:"R",stat:null,val:0,desc:"自ターンATK×1.2修正"},
+  {id:18,type:"item",name:"呪いの仮面",tag:"fire",rarity:"R",stat:null,val:0,desc:"ATK+3/INT+3/HP-6/DEF-1"},
+  // ── 水タグ C9 ──
+  {id:19,type:"tech",name:"シールドバッシュ",tag:"water",rarity:"C",desc:"×1.3/射1/回3/ATK低下(1T)"},
+  {id:20,type:"tech",name:"鉄壁の構え",tag:"water",rarity:"C",desc:"DEF+4(1T)/ターン終了/回3"},
+  {id:21,type:"tech",name:"砕撃",tag:"water",rarity:"C",desc:"HP6消費/固定16ダメ/射1/回2"},
+  {id:22,type:"tech",name:"挑発",tag:"water",rarity:"C",desc:"射1-2/回2/タゲ固定(1T)"},
+  {id:23,type:"skill",name:"カウンター",tag:"water",rarity:"C",stat:null,val:0,desc:"反撃ダメージ×1.3"},
+  {id:24,type:"skill",name:"生命力",tag:"water",rarity:"C",stat:null,val:0,desc:"HP30%以下で被ダメ-4"},
+  {id:25,type:"skill",name:"闘志",tag:"water",rarity:"C",stat:null,val:0,desc:"被ダメ時ATK+2(1T)"},
+  {id:26,type:"item",name:"鉄の盾",tag:"water",rarity:"C",stat:"def",val:3,desc:"DEF+3"},
+  {id:27,type:"item",name:"体力の護符",tag:"water",rarity:"C",stat:"maxHp",val:8,desc:"HP+8"},
+  // ── 水タグ U6 ──
+  {id:28,type:"tech",name:"救出",tag:"water",rarity:"U",desc:"射1/回2/味方を担ぐ"},
+  {id:29,type:"tech",name:"分け与え",tag:"water",rarity:"U",desc:"自HP消費→味方回復"},
+  {id:30,type:"tech",name:"吸命撃",tag:"water",rarity:"U",desc:"ATK×1.0/射1/回2/与ダメ50%回復"},
+  {id:31,type:"skill",name:"ドレイン",tag:"water",rarity:"U",stat:null,val:0,desc:"攻撃するたびHP5回復"},
+  {id:32,type:"item",name:"棘の鎧",tag:"water",rarity:"U",stat:null,val:0,desc:"攻撃してきた敵に固定4ダメ"},
+  {id:33,type:"item",name:"鮮血の鎧",tag:"water",rarity:"U",stat:null,val:0,desc:"攻撃命中時 次ターンDEF+3"},
+  // ── 水タグ R3 ──
+  {id:34,type:"tech",name:"要塞化",tag:"water",rarity:"R",desc:"ターン終了/回1/DEF2倍(3T)"},
+  {id:35,type:"skill",name:"不動の構え",tag:"water",rarity:"R",stat:null,val:0,desc:"HP50%以上で被ダメ30%減"},
+  {id:36,type:"item",name:"将軍の大盾",tag:"water",rarity:"R",stat:"def",val:7,desc:"DEF+7/MOV-1"},
+  // ── 風タグ C9 ──
+  {id:37,type:"tech",name:"ヒール",tag:"wind",rarity:"C",desc:"INT×1.0回復/射1/回3"},
+  {id:38,type:"tech",name:"ブレイク",tag:"wind",rarity:"C",desc:"射INT÷3/回2/反撃封じ(1T)"},
+  {id:39,type:"tech",name:"シール",tag:"wind",rarity:"C",desc:"射INT÷3/回2/技封じ(1T)"},
+  {id:40,type:"tech",name:"ウィンドアロー",tag:"wind",rarity:"C",desc:"INT×0.8/DEF半減/射2/回2"},
+  {id:41,type:"skill",name:"観察眼",tag:"wind",rarity:"C",stat:null,val:0,desc:"デバフ命中+15%"},
+  {id:42,type:"skill",name:"共鳴",tag:"wind",rarity:"C",stat:null,val:0,desc:"回復技使用時 隣接味方HP5回復"},
+  {id:43,type:"skill",name:"守護",tag:"wind",rarity:"C",stat:null,val:0,desc:"隣接味方の被ダメ-2(常時)"},
+  {id:44,type:"item",name:"導きの腕輪",tag:"wind",rarity:"C",stat:"int",val:3,desc:"INT+3"},
+  {id:45,type:"item",name:"弱体の杖",tag:"wind",rarity:"C",stat:null,val:0,desc:"隣接敵DEF-2(常時)"},
+  // ── 風タグ U6 ──
+  {id:46,type:"tech",name:"バインド",tag:"wind",rarity:"U",desc:"射INT÷3/回2/移動封じ(1T)"},
+  {id:47,type:"tech",name:"リブロー",tag:"wind",rarity:"U",desc:"INT×1.0回復/射INT÷3/回1"},
+  {id:48,type:"tech",name:"リフレッシュ",tag:"wind",rarity:"U",desc:"射1/回1/再行動付与"},
+  {id:49,type:"skill",name:"風まとい",tag:"wind",rarity:"U",stat:null,val:0,desc:"ターン終了時 隣接味方デバフ解除"},
+  {id:50,type:"skill",name:"堅守の祈り",tag:"wind",rarity:"U",stat:null,val:0,desc:"自DEF12↑で支援射程+1"},
+  {id:51,type:"item",name:"魔力の手",tag:"wind",rarity:"U",stat:null,val:0,desc:"INT÷2射程で1マス移動/回2"},
+  // ── 風タグ R3 ──
+  {id:52,type:"tech",name:"女神の祝福",tag:"wind",rarity:"R",desc:"範囲INT÷2内味方TEC分回復/回1"},
+  {id:53,type:"tech",name:"サンダーボルト",tag:"wind",rarity:"R",desc:"INT×0.7/DEF無視/射3-10/回3"},
+  {id:54,type:"skill",name:"風の祝福",tag:"wind",rarity:"R",stat:null,val:0,desc:"味方ターン開始時 隣接味方ATK+3/INT+3"},
+  // ── 汎用 C4 ──
+  {id:55,type:"item",name:"健脚のブーツ",tag:"any",rarity:"C",stat:"mov",val:1,desc:"MOV+1"},
+  {id:56,type:"skill",name:"地形渡り",tag:"any",rarity:"C",stat:null,val:0,desc:"地形移動コスト無視"},
+  {id:57,type:"skill",name:"魔物食の知識",tag:"any",rarity:"C",stat:null,val:0,desc:"敵撃破時HP5回復"},
+  {id:58,type:"skill",name:"無手の誇り",tag:"any",rarity:"C",stat:null,val:0,desc:"所持品0個時ATK+5/INT+5"},
+  // ── 汎用 U2 ──
+  {id:59,type:"skill",name:"侵食",tag:"any",rarity:"U",stat:null,val:0,desc:"ATK+4/DEF+4/毎ターンHP-3/解除不可"},
+  {id:60,type:"skill",name:"写し身",tag:"any",rarity:"U",stat:null,val:0,desc:"取得時 自スキル1つを複製"},
+  // ── 汎用 R1 ──
+  {id:61,type:"item",name:"魔物の首輪",tag:"any",rarity:"R",stat:null,val:0,desc:"騎馬or飛行選択"},
+];
+
+// ═══ UNITS ═══
+let uid=0;
+const mk=(name,team,x,y,stats,techNames=[],behavior="aggressive",charge=null)=>{
+  const techs=techNames.map(n=>{const t=TECHS[n];return t?{...t,uses:t.maxUses}:null;}).filter(Boolean);
+  return{id:`u${uid++}`,name,team,x,y,...stats,techs,skills:[],items:[],acted:false,exp:0,level:stats.level||1,
+    cls:"enemy",tags:[],behavior,debuffs:[],
+    ...(team==="enemy"?{expPool:EXP_POOL}:{}),
+    chargeTech:charge?TECHS[charge.tech]||null:null,
+    chargeTurns:charge?.turns||0,chargeCounter:0,chargeRepeat:charge?.repeat||false};
+};
+const mkP=(name,stats,tags,initTechs)=>{
+  const techs=initTechs.map(n=>{const t=TECHS[n];return t?{...t,uses:t.maxUses}:null;}).filter(Boolean);
+  return{id:`u${uid++}`,name,team:"player",x:-1,y:-1,...stats,techs,skills:[],
+    items:[{name:"傷薬",heal:15,uses:1,maxUses:1,desc:"HP15回復 消耗品"}],
+    acted:false,exp:0,level:1,cls:"冒険者",tags,initTechs,
+    behavior:"player",debuffs:[],deployed:false};
+};
+
+// Deploy config
+const SORTIE_LIMIT=6;
+const DEPLOY_ZONE=[];
+for(let y=0;y<8;y++)for(let x=0;x<5;x++){if(T[y][x]!==2)DEPLOY_ZONE.push({x,y});}
+
+function createRoster(){
+  uid=0;
+  return[
+    mkP("カティア",{hp:40,maxHp:40,str:14,def:10,int:7,mov:4,rangeMin:1,rangeMax:1},["fire","water"],["猛撃","シールドバッシュ"]),
+    mkP("ベルグ",{hp:50,maxHp:50,str:11,def:15,int:5,mov:3,rangeMin:1,rangeMax:1},["water","fire"],["鉄壁の構え","猛撃"]),
+    mkP("ドーラ",{hp:38,maxHp:38,str:16,def:8,int:9,mov:4,rangeMin:1,rangeMax:1},["fire","water"],["猛撃","シールドバッシュ"]),
+    mkP("ジンク",{hp:45,maxHp:45,str:8,def:13,int:11,mov:4,rangeMin:1,rangeMax:1},["water","wind"],["シールドバッシュ","ヒール"]),
+    mkP("ヘイゼル",{hp:35,maxHp:35,str:7,def:9,int:15,mov:4,rangeMin:1,rangeMax:1},["wind","water"],["ヒール","鉄壁の構え"]),
+    mkP("ヤシュカ",{hp:42,maxHp:42,str:9,def:12,int:13,mov:3,rangeMin:1,rangeMax:1},["water","wind"],["鉄壁の構え","ブレイク"]),
+    mkP("トーヴァ",{hp:30,maxHp:30,str:13,def:5,int:14,mov:4,rangeMin:2,rangeMax:2},["wind","fire"],["ブレイク","狙い撃ち"]),
+    mkP("ニカ",{hp:28,maxHp:28,str:10,def:6,int:17,mov:4,rangeMin:1,rangeMax:1},["wind","fire"],["ヒール","猛撃"]),
+    mkP("ブリキ",{hp:35,maxHp:35,str:15,def:6,int:12,mov:5,rangeMin:1,rangeMax:1},["fire","wind"],["猛撃","ブレイク"]),
+    mkP("モグラ",{hp:32,maxHp:32,str:12,def:4,int:16,mov:4,rangeMin:2,rangeMax:2},["wind","fire"],["ブレイク","狙い撃ち"]),
+  ];
+}
+
+const NUM_STAGES=6;
+const HP_RECOVERY_PCT=0.3;
+function createStageEnemies(stage){
+  uid=100+stage*20;
+  const s=stage;
+  const g=(hp,atk,def,tec)=>({hp:Math.round(hp*(1+s*0.12)),maxHp:Math.round(hp*(1+s*0.12)),atk:Math.round(atk*(1+s*0.1)),def:Math.round(def*(1+s*0.1)),int:Math.round(tec*(1+s*0.08))});
+  const emov=n=>n+(s>=3?1:0);
+  const lv=Math.max(1,Math.floor(s*0.7)+1);
+  if(stage<=4){
+    const enemies=[
+      mk("グール","enemy",9,2,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("グール","enemy",8,4,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("グール","enemy",7,6,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("シューター","enemy",11,5,{...g(22,10,4,8),mov:emov(3),rangeMin:2,rangeMax:3,level:lv},["長弓"],"stationary"),
+    ];
+    if(stage>=1)enemies.push(
+      mk("グール","enemy",6,8,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("シューター","enemy",12,7,{...g(22,10,4,8),mov:emov(3),rangeMin:2,rangeMax:3,level:lv},["長弓"],"stationary"),
+    );
+    if(stage>=2)enemies.push(
+      mk("ガード","enemy",11,9,{...g(42,14,16,4),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary"),
+      mk("グール","enemy",5,10,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+    );
+    if(stage>=3)enemies.push(
+      mk("ボマー","enemy",14,11,{...g(24,22,4,10),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary",{tech:"大爆発",turns:2,repeat:false}),
+      mk("ガード","enemy",13,10,{...g(42,14,16,4),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary"),
+      mk("堕天使","enemy",15,9,{...g(25,7,5,14),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["祈り"],"stationary"),
+    );
+    if(stage>=4)enemies.push(
+      mk("ボマー","enemy",12,5,{...g(24,22,4,10),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary",{tech:"大爆発",turns:2,repeat:true}),
+      mk("シューター","enemy",15,10,{...g(22,10,4,8),mov:emov(3),rangeMin:2,rangeMax:3,level:lv},["長弓"],"stationary"),
+    );
+    return enemies;
+  }else{
+    return[
+      mk("グール","enemy",8,3,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("グール","enemy",9,4,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("グール","enemy",7,5,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("グール","enemy",6,7,{...g(28,12,6,5),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["強撃"],"aggressive"),
+      mk("シューター","enemy",12,6,{...g(22,10,4,8),mov:emov(3),rangeMin:2,rangeMax:3,level:lv},["長弓"],"stationary"),
+      mk("シューター","enemy",14,8,{...g(22,10,4,8),mov:emov(3),rangeMin:2,rangeMax:3,level:lv},["長弓"],"stationary"),
+      mk("ガード","enemy",11,8,{...g(42,14,16,4),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary"),
+      mk("ガード","enemy",13,10,{...g(42,14,16,4),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary"),
+      mk("ボマー","enemy",15,11,{...g(24,22,4,10),mov:emov(3),rangeMin:1,rangeMax:1,level:lv+1},["強撃"],"stationary",{tech:"大爆発",turns:3,repeat:true}),
+      mk("堕天使","enemy",18,12,{...g(25,7,5,14),mov:emov(4),rangeMin:1,rangeMax:1,level:lv},["祈り"],"stationary"),
+      mk("ボス","enemy",17,13,{...g(60,20,14,12),mov:emov(4),rangeMin:1,rangeMax:1,level:lv+2},["渾身","咆哮"],"stationary"),
+    ];
+  }
+}
+
+// ═══ PATHFINDING ═══
+function manhattan(a,b){return Math.abs(a.x-b.x)+Math.abs(a.y-b.y);}
+function fmtRange(rMin,rMax){if(rMax<=0)return"−";return rMin===rMax?`${rMin}`:`${rMin}〜${rMax}`;}
+function bfs(unit,units){
+  if((unit.debuffs||[]).some(db=>db.name==="移動封じ")){
+    return{cells:[{x:unit.x,y:unit.y}],parent:{[`${unit.x},${unit.y}`]:null}};}
+  const alive=units.filter(u=>u.hp>0);const key=(x,y)=>`${x},${y}`;
+  const costs={},parent={};costs[key(unit.x,unit.y)]=0;parent[key(unit.x,unit.y)]=null;
+  const cells=[];const queue=[{x:unit.x,y:unit.y,cost:0}];
+  while(queue.length){queue.sort((a,b)=>a.cost-b.cost);const{x,y,cost}=queue.shift();const k=key(x,y);
+    if(cost>costs[k])continue;if(!alive.find(u=>u.x===x&&u.y===y&&u.id!==unit.id))cells.push({x,y});
+    for(const[dx,dy]of[[0,1],[0,-1],[1,0],[-1,0]]){const nx=x+dx,ny=y+dy,nk=key(nx,ny);
+      if(nx<0||nx>=COLS||ny<0||ny>=ROWS)continue;const tc=TMOV[T[ny][nx]];
+      const hasTerrainWalk=hasSkill(unit,"地形渡り");
+      if(!hasTerrainWalk&&tc>=99)continue;if(hasTerrainWalk&&tc>=99)continue; // walls still block
+      const nc=cost+(hasTerrainWalk?1:tc);if(nc>unit.mov)continue;if(alive.find(u=>u.x===nx&&u.y===ny&&u.team!==unit.team))continue;
+      if(costs[nk]===undefined||nc<costs[nk]){costs[nk]=nc;parent[nk]=k;queue.push({x:nx,y:ny,cost:nc});}}}
+  return{cells,parent};
+}
+function getMovable(u,units){return bfs(u,units).cells;}
+function getPath(unit,tx,ty,units){
+  const{parent}=bfs(unit,units);const key=(x,y)=>`${x},${y}`;const tk=key(tx,ty);
+  if(parent[tk]===undefined&&(tx!==unit.x||ty!==unit.y))return[];
+  const path=[];let cur=tk;while(cur&&cur!==key(unit.x,unit.y)){const[x,y]=cur.split(",").map(Number);path.unshift({x,y});cur=parent[cur];}
+  return path;
+}
+
+function getAtkCells(x,y,rMin,rMax){
+  if(rMax<=0)return[];const c=[];
+  for(let cx=0;cx<COLS;cx++)for(let cy=0;cy<ROWS;cy++){const d=Math.abs(cx-x)+Math.abs(cy-y);if(d>=rMin&&d<=rMax)c.push({x:cx,y:cy});}
+  return c;
+}
+function getTechAtkCells(x,y,tech,unit){const rMax=tech.tecRange&&unit?Math.max(1,Math.floor((unit.int+intBonus(unit))/tech.tecRange)):tech.rangeMax;return getAtkCells(x,y,tech.rangeMin,rMax);}
+
+function calcDmg(a,d,mod=1){return Math.max(1,Math.floor(a*mod)-d);}
+function calcTechDmg(atk,int_,def,terrDef,tech){
+  if(tech?.fixed){return tech.fixed;}  // 固定ダメージ: DEF無視
+  if(tech?.tecRef){  // INT参照攻撃
+    const effDef=tech.defIgnore?0:tech.defHalf?Math.floor((def+terrDef)/2):(def+terrDef);
+    return Math.max(1,Math.floor(int_*(tech.mod||1))-effDef);
+  }
+  if(tech?.flatAdd!==undefined){return Math.max(1,atk+tech.flatAdd-(def+terrDef));}  // 固定加算: ATK+技威力-DEF
+  return calcDmg(atk,def+terrDef,tech?.mod||1);  // 倍率: ATK×倍率-DEF
+}
+function tDef(x,y){return TDEF[T[y]?.[x]]||0;}
+function canUseTech(unit,tech){
+  if((unit.debuffs||[]).some(db=>db.name==="技封じ"))return false;
+  if(!tech.cond)return true;
+  return(unit[tech.cond.stat]||0)>=tech.cond.val;
+}
+
+// ═══ EXP POOL SYSTEM ═══
+function expLvMod(playerLv,enemyLv){
+  const diff=playerLv-enemyLv;
+  if(diff<=0)return 1.0;if(diff<=2)return 0.75;if(diff<=4)return 0.5;return 0.25;
+}
+function awardExp(playerUnit,enemyUnit,isKill,logs){
+  if(!enemyUnit.expPool||enemyUnit.expPool<=0)return 0;
+  if(playerUnit.level>=LEVEL_CAP)return 0;
+  const raw=isKill?enemyUnit.expPool:Math.min(EXP_PER_HIT,enemyUnit.expPool);
+  enemyUnit.expPool-=raw;
+  const mod=expLvMod(playerUnit.level,enemyUnit.level);
+  const actual=Math.floor(raw*mod);
+  if(actual>0)playerUnit.exp+=actual;
+  if(actual>0)logs.push({text:`  ${playerUnit.name} は ${actual}EXP を獲得${mod<1?` (Lv差補正${Math.round(mod*100)}%)`:""} [残プール${enemyUnit.expPool}]`,type:"exp"});
+  return actual;
+}
+
+// ═══ CLASS TRAITS ═══
+function getTrait(unit){return CLASS_DATA[unit.cls]?.trait||null;}
+
+// ═══ ATK CALCULATION ═══
+function getATK(unit){return(unit.str||0)+(unit.pp||0);}
+
+// ═══ SKILL HELPERS ═══
+function hasSkill(unit,name){return(unit.skills||[]).some(s=>s.name===name);}
+function pursuitBonus(unit){let b=0;if(hasSkill(unit,"集中"))b+=25;return b;}
+function atkModifiers(a,d,us){
+  let bonus=0,mult=1;
+  // ソーサラー兵種特性: 射程2技ATK+2 (applied at combat time based on tech)
+  if(hasSkill(a,"冷酷")&&d.hp<=d.maxHp/2)bonus+=3;
+  if(hasSkill(a,"知略"))bonus+=Math.floor(a.int/3);
+  if(hasSkill(a,"闘争本能"))mult=1.2;
+  if(hasSkill(a,"無手の誇り")&&(a.items||[]).length===0){bonus+=5;}
+  return{bonus,mult};
+}
+function defModifiers(d){
+  let red=0,pct=1;
+  if(hasSkill(d,"生命力")&&d.hp<=d.maxHp*0.3)red+=4;
+  if(hasSkill(d,"不動の構え")&&d.hp>=d.maxHp*0.5)pct=0.7;
+  return{red,pct};
+}
+function intBonus(unit){
+  if(hasSkill(unit,"無手の誇り")&&(unit.items||[]).length===0)return 5;
+  return 0;
+}
+function counterMod(unit){return hasSkill(unit,"カウンター")?1.3:1;}
+
+// ═══ ADJACENCY HELPERS ═══
+function getAdj(x,y){return[{x:x-1,y},{x:x+1,y},{x,y:y-1},{x,y:y+1}];}
+function adjAllyAtkBonus(unit,units){
+  let b=0;const adj=getAdj(unit.x,unit.y);
+  for(const a of adj){const u=units.find(u2=>u2.x===a.x&&u2.y===a.y&&u2.hp>0&&u2.team===unit.team&&u2.id!==unit.id);
+    if(u){if((u.items||[]).some(i=>i.name==="戦鼓"))b+=2;
+      if(hasSkill(u,"風の祝福")&&unit._windBlessing)b+=0;}} // 風の祝福はターン開始時に別途処理
+  return b;
+}
+function adjAllyDefBonus(unit,units){
+  let b=0;const adj=getAdj(unit.x,unit.y);
+  for(const a of adj){const u=units.find(u2=>u2.x===a.x&&u2.y===a.y&&u2.hp>0&&u2.team===unit.team&&u2.id!==unit.id);
+    if(u&&hasSkill(u,"守護"))b+=2;
+    if(u&&getTrait(u)==="shieldAura")b+=3;}
+  return b;
+}
+function adjEnemyDefPenalty(unit,units){
+  let p=0;const adj=getAdj(unit.x,unit.y);
+  for(const a of adj){const u=units.find(u2=>u2.x===a.x&&u2.y===a.y&&u2.hp>0&&u2.team!==unit.team);
+    if(u&&(u.items||[]).some(i=>i.name==="弱体の杖"))p+=2;}
+  return p;
+}
+function effectiveDef(unit,units){return Math.max(0,unit.def-adjEnemyDefPenalty(unit,units))+adjAllyDefBonus(unit,units);}
+function effectiveAtk(unit,units){return getATK(unit)+adjAllyAtkBonus(unit,units);}
+
+// ═══ AOE HELPERS ═══
+const DIRS=[{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+function getAoeCells(ax,ay,aoeType,dir){
+  // dir={dx,dy}
+  const {dx,dy}=dir;
+  const c1={x:ax+dx,y:ay+dy};       // 1マス前
+  const c2={x:ax+dx*2,y:ay+dy*2};   // 2マス前
+  if(aoeType==="dir_line"){
+    return[c1,c2]; // 前方2マス
+  }
+  if(aoeType==="dir_cross"){
+    // 前方2マス + 各マスの横2マス = 6マス
+    const perp={dx:dy===0?0:1,dy:dx===0?0:1}; // perpendicular
+    const px=Math.abs(dy),py=Math.abs(dx); // swap for perpendicular
+    return[
+      c1,c2,
+      {x:c1.x+px,y:c1.y+py},{x:c1.x-px,y:c1.y-py},
+      {x:c2.x+px,y:c2.y+py},{x:c2.x-px,y:c2.y-py},
+    ];
+  }
+  return[];
+}
+function getAllAoeCells(ax,ay,aoeType){
+  // All 4 directions combined (for highlighting)
+  const all=[];
+  for(const d of DIRS){for(const c of getAoeCells(ax,ay,aoeType,d)){
+    if(c.x>=0&&c.x<COLS&&c.y>=0&&c.y<ROWS&&!all.some(a=>a.x===c.x&&a.y===c.y))all.push(c);}}
+  return all;
+}
+function cellToDir(ax,ay,cx,cy){
+  // Given clicked cell, determine which direction it belongs to
+  for(const d of DIRS){
+    const cells=getAoeCells(ax,ay,"dir_cross",d); // use widest pattern
+    if(cells.some(c=>c.x===cx&&c.y===cy))return d;
+  }
+  return null;
+}
+
+// ═══ COMBAT (処理順: 攻撃→反撃→追撃→デバフ適用) ═══
+function executeCombat(atkU,defU,tech,units){
+  const us=units.map(u=>({...u,techs:u.techs.map(t=>({...t})),skills:[...(u.skills||[])],debuffs:(u.debuffs||[]).map(db=>({...db})),items:(u.items||[]).map(it=>({...it})),
+    ...(u.expPool!==undefined?{expPool:u.expPool}:{})}));
+  const a=us.find(u=>u.id===atkU.id),d=us.find(u=>u.id===defU.id);
+  const logs=[],hits=[];
+  let totalExp=0,expUid=null;
+  const label=tech?tech.name:"通常攻撃";
+  const numHits=tech?.hits||1;
+  const isDebuffOnly=tech?.debuffOnly;
+  // ── HP cost (砕撃 etc) ──
+  if(tech?.hpCost&&a.hp>tech.hpCost){a.hp-=tech.hpCost;
+    logs.push({text:`${a.name} はHP${tech.hpCost}消費`,type:"info"});}
+  // ── Step 1: Attack (supports multi-hit, fixed, INT-ref, skill modifiers) ──
+  if(!isDebuffOnly){
+    let aAtk=effectiveAtk(a,us);const dDefEff=effectiveDef(d,us);
+    if(getTrait(a)==="rangeBoost"&&tech&&tech.rangeMin>=2)aAtk+=2;
+    const am=atkModifiers(a,d,us);const dm=defModifiers(d);
+    let totalDrain=0;
+    for(let hit=0;hit<numHits;hit++){
+      if(d.hp<=0)break;
+      let dmg=calcTechDmg(aAtk+am.bonus,a.int+intBonus(a),dDefEff,tDef(d.x,d.y),tech);
+      dmg=Math.max(1,Math.floor(dmg*am.mult));
+      dmg=Math.max(1,Math.floor(dmg*dm.pct)-dm.red);
+      d.hp=Math.max(0,d.hp-dmg);
+      if(d.hp<=0&&getTrait(d)==="miracle"&&!d._miracleUsed){d.hp=1;d._miracleUsed=true;
+        logs.push({text:`  不屈！ ${d.name} はHP1で耐えた！`,type:"info"});}
+      const hitLabel=numHits>1?` (${hit+1}/${numHits})`:"";
+      logs.push({text:`${hit===0?"":"  "}${a.name} の ${label}${hitLabel} → ${d.name} に ${dmg}ダメージ${d.hp<=0?" 【撃破】":""}`,type:"atk"});
+      hits.push({uid:d.id,dmg,delay:hit*250,phase:"atk"});
+      if(tech?.drain)totalDrain+=Math.floor(dmg*tech.drain);
+      if(hasSkill(a,"ドレイン")&&a.hp>0&&a.hp<a.maxHp){const dh=Math.min(5,a.maxHp-a.hp);a.hp+=dh;}
+      if(a.team==="player"&&d.team==="enemy"){totalExp+=awardExp(a,d,d.hp<=0,logs);expUid=a.id;}
+    }
+    // Drain tech heal
+    if(totalDrain>0&&a.hp>0){const heal=Math.min(totalDrain,a.maxHp-a.hp);a.hp+=heal;
+      logs.push({text:`  ${a.name} は ${heal}HP吸収`,type:"heal"});
+      hits.push({uid:a.id,dmg:heal,delay:numHits*250,phase:"heal"});}
+    // ヴァンガード報復: 被ダメ→次ターンATK+3
+    if(getTrait(d)==="revenge"&&d.hp>0)d._revengePending=true;
+    // 火薬: 射程2+の技ヒット時に火傷
+    if(d.hp>0&&tech&&(tech.rangeMin>=2||tech.rangeMax>=2)&&(a.items||[]).some(i=>i.name==="火薬")){
+      d.debuffs.push({name:"火傷",turns:2});
+      logs.push({text:`  火薬効果: ${d.name} は火傷(2T)`,type:"debuff"});
+      hits.push({uid:d.id,dmg:"火傷",delay:numHits*250+100,phase:"debuff_pop"});}
+    // 棘の鎧: 攻撃してきた敵に固定4ダメ
+    if(a.hp>0&&(d.items||[]).some(i=>i.name==="棘の鎧")){
+      const thorn=4;a.hp=Math.max(0,a.hp-thorn);
+      logs.push({text:`  棘の鎧: ${a.name} に ${thorn}ダメージ${a.hp<=0?" 【撃破】":""}`,type:"counter"});}
+    // 鮮血の鎧: 攻撃命中時DEF+3(次ターン用フラグ)
+    if(d.hp>0&&(a.items||[]).some(i=>i.name==="鮮血の鎧")){a._bloodArmor=true;}
+    // 撃破時効果
+    if(d.hp<=0){
+      if(hasSkill(a,"魔物食の知識")&&a.hp>0){const mh=Math.min(5,a.maxHp-a.hp);if(mh>0){a.hp+=mh;
+        logs.push({text:`  魔物食: ${a.name} HP${mh}回復`,type:"heal"});}}
+      if(hasSkill(a,"血風")){const adj=getAdj(d.x,d.y);const splash=Math.floor(getATK(a)*0.3);
+        for(const ac of adj){const t2=us.find(u2=>u2.x===ac.x&&u2.y===ac.y&&u2.hp>0&&u2.team===d.team&&u2.id!==d.id);
+          if(t2){t2.hp=Math.max(0,t2.hp-splash);
+            logs.push({text:`  血風: ${t2.name} に ${splash}飛散ダメージ${t2.hp<=0?" 【撃破】":""}`,type:"atk"});}}
+      }
+    }
+  }
+  if(tech){const t=a.techs.find(t=>t.name===tech.name);if(t)t.uses--;}
+  // ── Step 2: Counter ──
+  if(d.hp>0&&!isDebuffOnly){
+    const dist=manhattan(a,d);
+    const hasCounterBlock=d.debuffs.some(db=>db.name==="反撃不能");
+    if(hasCounterBlock){logs.push({text:`  ${d.name} は反撃不能！`,type:"info"});}
+    else if(d.rangeMax>0&&dist>=d.rangeMin&&dist<=d.rangeMax){
+      const cMod=counterMod(d);
+      const dAtk=effectiveAtk(d,us);const aDefEff=effectiveDef(a,us)+tDef(a.x,a.y);
+      const amC=defModifiers(a);
+      let d2=Math.max(1,Math.floor(dAtk*cMod)-aDefEff);
+      d2=Math.max(1,Math.floor(d2*amC.pct)-amC.red);
+      a.hp=Math.max(0,a.hp-d2);
+      logs.push({text:`  ${d.name} の反撃${cMod>1?" (カウンター)":""}→ ${a.name} に ${d2}ダメージ${a.hp<=0?" 【撃破】":""}`,type:"counter"});
+      hits.push({uid:a.id,dmg:d2,delay:numHits*250+200,phase:"counter"});
+      // ヴァンガード報復: 被ダメ→次ターンATK+3
+      if(getTrait(a)==="revenge"&&a.hp>0)a._revengePending=true;
+      // 闘志: 被ダメ時ATK+2(1T)
+      if(hasSkill(a,"闘志")&&!a._fightSpirit&&a.hp>0){a.str+=2;a._fightSpirit=true;
+        logs.push({text:`  闘志発動: ${a.name} ATK+2`,type:"info"});
+        hits.push({uid:a.id,dmg:"ATK+2",delay:numHits*250+300,phase:"buff_pop"});}
+      if(d.team==="player"&&a.team==="enemy"){totalExp+=awardExp(d,a,a.hp<=0,logs);expUid=d.id;}
+    }else if(d.rangeMax<=0){logs.push({text:`  ${d.name} は反撃手段がない`,type:"info"});}
+    else{logs.push({text:`  ${d.name} は反撃できない（射程外）`,type:"info"});}
+    // 報復の鎧: 被ダメ反射
+    if(d._retaliate&&d.hp>0){const refl=Math.floor((d.maxHp-d.hp)*0.3)||1;
+      a.hp=Math.max(0,a.hp-refl);
+      logs.push({text:`  報復の鎧: ${a.name} に ${refl}反射ダメージ`,type:"counter"});}
+  }
+  // ── Step 3: Pursuit (attacker only) ──
+  if(a.hp>0&&d.hp>0&&!isDebuffOnly){const dist=manhattan(a,d);
+    const aInPlainRange=dist>=a.rangeMin&&dist<=a.rangeMax;
+    const bonus=pursuitBonus(a);
+    const aPursuitPct=aInPlainRange?Math.max(0,Math.min(100,(a.int-d.int)*PURSUIT_RATE_PER_INT+bonus)):0;
+    if(aPursuitPct>0){
+      const roll=Math.random()*100;const success=roll<aPursuitPct;
+      if(success){const d3=calcDmg(effectiveAtk(a,us),effectiveDef(d,us)+tDef(d.x,d.y));d.hp=Math.max(0,d.hp-d3);
+        logs.push({text:`  追撃判定 ${aPursuitPct}% → 成功！ ${a.name} → ${d.name} に ${d3}ダメージ${d.hp<=0?" 【撃破】":""}`,type:"followup"});
+        hits.push({uid:d.id,dmg:d3,delay:numHits*250+500,phase:"pursuit"});
+        if(a.team==="player"&&d.team==="enemy"){totalExp+=awardExp(a,d,d.hp<=0,logs);expUid=a.id;}
+      }else{logs.push({text:`  追撃判定 ${aPursuitPct}% → 失敗`,type:"info"});}
+    }
+  }
+  // ── Step 4: Debuff ──
+  if(tech?.debuff&&d.hp>0){
+    const db=tech.debuff;
+    const isAutoHit=db.name==="ATK低下"||db.name==="DEF低下"||db.name==="タゲ固定"||db.autoHit;
+    if(isAutoHit){
+      d.debuffs.push({name:db.name,turns:db.turns});
+      logs.push({text:`  ${d.name} は ${db.name}(${db.turns}T) [必中]`,type:"debuff"});
+      hits.push({uid:d.id,dmg:db.name,delay:numHits*250+700,phase:"debuff_pop"});
+    }else{
+      const obsBonus=hasSkill(a,"観察眼")?15:0;
+      const base=db.baseHit||BASE_DEBUFF_HIT;
+      const traitBonus=getTrait(a)==="rangeBoost"?15:0;
+      const intDiff=(a.int-d.int)*DEBUFF_HIT_PER_TEC; // positive or negative
+      const debuffHit=Math.max(0,Math.min(100,base+intDiff+obsBonus));
+      const debuffRoll=Math.random()*100;
+      if(debuffRoll<debuffHit){
+        d.debuffs.push({name:db.name,turns:db.turns});
+        logs.push({text:`  デバフ判定 ${debuffHit}% → 成功！ ${d.name} は ${db.name}(${db.turns}T)`,type:"debuff"});
+        hits.push({uid:d.id,dmg:db.name,delay:numHits*250+700,phase:"debuff_pop"});
+        if(d.chargeCounter>0){d.chargeCounter=d.chargeTurns;
+          logs.push({text:`  ${d.name} のチャージが中断された！`,type:"info"});}
+      }else{logs.push({text:`  デバフ判定 ${debuffHit}% → 失敗（${db.name}回避）`,type:"info"});}
+    }
+  }
+  const expGain=totalExp>0&&expUid?{uid:expUid,xp:totalExp}:null;
+  return{units:us,logs,hits,expGain};
+}
+
+// ═══ AOE COMBAT ═══
+function executeAoeCombat(atkU,dir,tech,units){
+  const us=units.map(u=>({...u,techs:u.techs.map(t=>({...t})),skills:[...(u.skills||[])],debuffs:(u.debuffs||[]).map(db=>({...db})),items:(u.items||[]).map(it=>({...it})),
+    ...(u.expPool!==undefined?{expPool:u.expPool}:{})}));
+  const a=us.find(u=>u.id===atkU.id);
+  const logs=[],hits=[];
+  let totalExp=0,expUid=null;
+  const EXP_CAP=20;
+  const enemyTeam=a.team==="player"?"enemy":"player";
+  const areaCells=getAoeCells(a.x,a.y,tech.aoe,dir).filter(c=>c.x>=0&&c.x<COLS&&c.y>=0&&c.y<ROWS);
+  const targetCells=areaCells; // hit all cells in the pattern
+  // Consume tech use
+  const t=a.techs.find(t=>t.name===tech.name);if(t)t.uses--;
+  const am=atkModifiers(a,{hp:0,maxHp:1},us);
+  // Hit each target
+  let hitIdx=0;
+  for(const tc of targetCells){
+    const d=us.find(u=>u.x===tc.x&&u.y===tc.y&&u.hp>0&&u.team===enemyTeam);
+    if(!d)continue;
+    const dm=defModifiers(d);
+    const dDefEff=effectiveDef(d,us);
+    let dmg=calcTechDmg(effectiveAtk(a,us)+am.bonus,a.int,dDefEff,tDef(d.x,d.y),tech);
+    dmg=Math.max(1,Math.floor(dmg*am.mult));
+    dmg=Math.max(1,Math.floor(dmg*dm.pct)-dm.red);
+    d.hp=Math.max(0,d.hp-dmg);
+    logs.push({text:`${a.name} の ${tech.name} → ${d.name} に ${dmg}ダメージ${d.hp<=0?" 【撃破】":""}`,type:"atk"});
+    hits.push({uid:d.id,dmg,delay:hitIdx*200,phase:"atk"});
+    if(totalExp<EXP_CAP&&a.team==="player"&&d.team==="enemy"){
+      const e=awardExp(a,d,d.hp<=0,logs);totalExp+=e;expUid=a.id;
+    }
+    hitIdx++;
+  }
+  // Counterattack from all surviving targets that can counter
+  for(const tc of targetCells){
+    const d=us.find(u=>u.x===tc.x&&u.y===tc.y&&u.hp>0&&u.team===enemyTeam);
+    if(!d||a.hp<=0)continue;
+    const dist=manhattan(a,d);
+    if(d.debuffs.some(db=>db.name==="反撃不能"))continue;
+    if(d.rangeMax>0&&dist>=d.rangeMin&&dist<=d.rangeMax){
+      const cMod=counterMod(d);
+      const aDefEff=effectiveDef(a,us)+tDef(a.x,a.y);
+      const cd=Math.max(1,Math.floor(effectiveAtk(d,us)*cMod)-aDefEff);
+      a.hp=Math.max(0,a.hp-cd);
+      logs.push({text:`  ${d.name} の反撃 → ${a.name} に ${cd}ダメージ${a.hp<=0?" 【撃破】":""}`,type:"counter"});
+      hits.push({uid:a.id,dmg:cd,delay:hitIdx*200+200,phase:"counter"});hitIdx++;
+    }
+  }
+  // Pursuit: after all hits, check vs closest target in range
+  const closestInRange=us.filter(u=>u.team===enemyTeam&&u.hp>0&&areaCells.some(c=>c.x===u.x&&c.y===u.y))
+    .sort((a2,b)=>manhattan(a,a2)-manhattan(a,b))[0];
+  const primaryTarget=closestInRange;
+  if(primaryTarget&&a.hp>0){
+    const dist=manhattan(a,primaryTarget);
+    const inRange=dist>=a.rangeMin&&dist<=a.rangeMax;
+    const pPct=inRange?Math.max(0,Math.min(100,(a.int-primaryTarget.int)*PURSUIT_RATE_PER_INT+pursuitBonus(a))):0;
+    if(pPct>0&&Math.random()*100<pPct){
+      const pd=calcDmg(effectiveAtk(a,us),effectiveDef(primaryTarget,us)+tDef(primaryTarget.x,primaryTarget.y));
+      primaryTarget.hp=Math.max(0,primaryTarget.hp-pd);
+      logs.push({text:`  追撃 ${pPct}% → 成功！ ${a.name} → ${primaryTarget.name} に ${pd}ダメージ${primaryTarget.hp<=0?" 【撃破】":""}`,type:"followup"});
+      hits.push({uid:primaryTarget.id,dmg:pd,delay:hitIdx*200+400,phase:"pursuit"});
+    }
+  }
+  const expGain=totalExp>0&&expUid?{uid:expUid,xp:totalExp}:null;
+  return{units:us,logs,hits,expGain};
+}
+
+// Healing
+function executeHeal(healer,target,tech,units){
+  const us=units.map(u=>({...u,techs:u.techs.map(t=>({...t})),skills:[...(u.skills||[])],debuffs:(u.debuffs||[]).map(db=>({...db})),items:(u.items||[]).map(it=>({...it})),
+    ...(u.expPool!==undefined?{expPool:u.expPool}:{})}));
+  const h=us.find(u=>u.id===healer.id),tgt=us.find(u=>u.id===target.id);
+  let healAmt=tech.heal||0;
+  if(tech.tecHeal)healAmt=Math.floor((h.int+intBonus(h))*(tech.mod||1.0));
+  if(tech.giveHeal){healAmt=tech.giveHeal;if(tech.hpCost){h.hp=Math.max(1,h.hp-tech.hpCost);
+    logs.push({text:`  ${h.name} はHP${tech.hpCost}消費`,type:"info"});}}
+  if(getTrait(h)==="healBoost")healAmt=Math.floor(healAmt*1.5);
+  if(healAmt<=0)healAmt=1; // safety
+  const amt=Math.min(healAmt,tgt.maxHp-tgt.hp);
+  tgt.hp+=amt;
+  const t=h.techs.find(t=>t.name===tech.name);if(t)t.uses--;
+  const logs=[{text:`${h.name} の ${tech.name} → ${tgt.name} を ${amt}回復`,type:"heal"}];
+  // 共鳴: 回復技使用時、隣接味方HP5回復
+  if(hasSkill(h,"共鳴")){
+    for(const ac of getAdj(tgt.x,tgt.y)){
+      const ally=us.find(u=>u.x===ac.x&&u.y===ac.y&&u.hp>0&&u.team===h.team);
+      if(ally&&ally.hp<ally.maxHp){const rh=Math.min(5,ally.maxHp-ally.hp);ally.hp+=rh;
+        logs.push({text:`  共鳴: ${ally.name} HP${rh}回復`,type:"heal"});}
+    }
+    // Self adjacency check
+    if(getAdj(tgt.x,tgt.y).some(ac=>ac.x===h.x&&ac.y===h.y)&&h.hp<h.maxHp){
+      const sh=Math.min(5,h.maxHp-h.hp);h.hp+=sh;logs.push({text:`  共鳴: ${h.name} HP${sh}回復`,type:"heal"});}
+  }
+  return{units:us,logs,healAmt:amt};
+}
+
+function expNext(){return 20;}
+function applyLevelUp(unit){
+  const u={...unit,techs:[...unit.techs],skills:[...unit.skills],debuffs:(unit.debuffs||[]).map(db=>({...db})),items:(unit.items||[]).map(it=>({...it}))};
+  u.exp-=expNext();u.level++;const g=CLASS_DATA[u.cls]?.growth||{hp:1,str:0.7,def:0.7,int:0.7};
+  // Fractional growth accumulation
+  if(!u._growthAcc)u._growthAcc={hp:0,str:0,def:0,int:0};
+  const gains={hp:0,str:0,def:0,int:0};
+  for(const s of["hp","str","def","int"]){
+    u._growthAcc[s]+=(g[s]||0);
+    const inc=Math.floor(u._growthAcc[s]);
+    u._growthAcc[s]-=inc;gains[s]=inc;
+  }
+  u.maxHp+=gains.hp;u.hp+=gains.hp;u.str+=gains.str;u.def+=gains.def;u.int+=gains.int;
+  return{unit:u,gains};
+}
+function getRandParts(unit,n=3){
+  const owned=new Set([...unit.techs.map(t=>t.name),...unit.skills.map(s=>s.name),...(unit.items||[]).map(i=>i.name)]);
+  const initSet=new Set(unit.initTechs||[]);
+  const t1=unit.tags?.[0],t2=unit.tags?.[1];
+  const allTags=["fire","water","wind"];const weak=allTags.find(t=>t!==t1&&t!==t2)||"any";
+  const result=[];
+  for(let i=0;i<60&&result.length<n;i++){
+    const rr=Math.random()*100;const rar=rr<65?"C":rr<93?"U":"R";
+    const tr=Math.random()*100;const tag=tr<38?t1:tr<76?t2:tr<88?weak:"any";
+    const pool=ALL_PARTS.filter(p=>p.tag===tag&&p.rarity===rar&&!owned.has(p.name)&&!result.some(r=>r.id===p.id)
+      &&!(rar==="C"&&p.type==="tech"&&initSet.has(p.name)));
+    if(pool.length>0)result.push(pool[Math.floor(Math.random()*pool.length)]);
+  }
+  return result;
+}
+function applyPart(unit,part){
+  const u={...unit,techs:unit.techs.map(t=>({...t})),skills:[...unit.skills],debuffs:(unit.debuffs||[]).map(db=>({...db})),items:(unit.items||[]).map(it=>({...it}))};
+  const sl=getSlots(u);
+  if(part.type==="tech"){const td=TECHS[part.name];if(td&&u.techs.length<sl.t)u.techs.push({...td,uses:td.maxUses});}
+  else if(part.type==="skill"){
+    if(u.skills.length<sl.s){u.skills.push({name:part.name,stat:part.stat,val:part.val,desc:part.desc||""});
+      if(part.name==="写し身"&&u.skills.length>0){
+        const orig=u.skills[0];u.skills.push({...orig,name:orig.name+"(写)",desc:orig.desc||""});}
+      else if(part.name==="侵食"){u.str+=4;u.def+=4;}
+      else if(part.stat&&part.val){if(part.stat==="maxHp"){u.maxHp+=part.val;u.hp+=part.val;}else u[part.stat]+=part.val;}}
+  }else if(part.type==="item"){
+    if((u.items||[]).length<sl.i){const it={name:part.name,stat:part.stat,val:part.val,desc:part.desc,
+      ...(part.name==="魔力の手"?{uses:2,maxUses:2}:{})};u.items.push(it);
+      if(part.name==="呪いの仮面"){u.str+=3;u.int+=3;u.maxHp=Math.max(1,u.maxHp-6);u.hp=Math.max(1,u.hp-6);u.def-=1;}
+      else if(part.name==="将軍の大盾"){u.def+=7;u.mov=Math.max(1,u.mov-1);}
+      else if(part.name==="長弓"){u.techs=u.techs.map(t=>(t.rangeMin>=2&&t.rangeMax>=2)?{...t,rangeMax:t.rangeMax+1}:t);}
+      else if(part.stat&&part.val){if(part.stat==="maxHp"){u.maxHp+=part.val;u.hp+=part.val;}else u[part.stat]+=part.val;}}
+  }
+  return u;
+}
+
+// ═══ CSS ═══
+const SID="srpg10";
+function injectCSS(){if(document.getElementById(SID))return;const s=document.createElement("style");s.id=SID;
+  s.textContent=`@keyframes s-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}40%{transform:translateX(4px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+  @keyframes s-flash{0%{opacity:0}30%{opacity:0.7}100%{opacity:0}}
+  @keyframes s-dmg{0%{opacity:1;transform:translateY(0) scale(1)}50%{opacity:1;transform:translateY(-18px) scale(1.3)}100%{opacity:0;transform:translateY(-28px) scale(0.8)}}
+  @keyframes s-heal{0%{opacity:1;transform:translateY(0)}60%{opacity:1;transform:translateY(-16px)}100%{opacity:0;transform:translateY(-24px)}}
+  @keyframes s-fin{from{opacity:0;transform:scale(0.97)}to{opacity:1;transform:scale(1)}}
+  @keyframes s-ban{0%{transform:scaleX(0);opacity:0}20%{transform:scaleX(1);opacity:1}80%{transform:scaleX(1);opacity:1}100%{transform:scaleX(0);opacity:0}}
+  @keyframes s-slin{from{transform:translateY(6px);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes s-buff{0%{opacity:1;transform:translateY(0) scale(1)}60%{opacity:1;transform:translateY(-14px) scale(1.1)}100%{opacity:0;transform:translateY(-22px) scale(0.9)}}
+  @keyframes s-debuff{0%{opacity:1;transform:translateY(0) scale(1.2)}40%{opacity:1;transform:translateY(-8px) scale(1)}100%{opacity:0;transform:translateY(-16px) scale(0.8)}}
+  @keyframes s-charge{0%{box-shadow:0 0 4px 1px rgba(249,115,22,0.6)}50%{box-shadow:0 0 10px 3px rgba(249,115,22,0.9)}100%{box-shadow:0 0 4px 1px rgba(249,115,22,0.6)}}
+  *{box-sizing:border-box;}`;
+  document.head.appendChild(s);}
+
+// ═══ UNIT COLORS ═══
+const UCOL={カティア:"#3b82f6",ベルグ:"#1e40af",ドーラ:"#ef4444",ジンク:"#0ea5e9",ヘイゼル:"#a78bfa",
+  ヤシュカ:"#6366f1",トーヴァ:"#22c55e",ニカ:"#8b5cf6",ブリキ:"#f59e0b",モグラ:"#84cc16",
+  グール:"#dc2626",シューター:"#b45309",ガード:"#991b1b",ボマー:"#f97316",ボス:"#7f1d1d",堕天使:"#6d28d9"};
+function UC({unit,size=30}){
+  const bg=UCOL[unit.name]||(unit.team==="player"?"#3b82f6":"#ef4444");
+  return(<div style={{width:size,height:size,borderRadius:5,
+    background:`linear-gradient(135deg,${bg},${bg}cc)`,
+    display:"flex",alignItems:"center",justifyContent:"center",
+    fontSize:size*0.38,fontWeight:700,color:"#fff",
+    border:unit.team==="player"?"2px solid rgba(255,255,255,0.3)":"2px solid rgba(0,0,0,0.3)",
+    boxShadow:"0 2px 4px rgba(0,0,0,0.3)",textShadow:"0 1px 2px rgba(0,0,0,0.5)",flexShrink:0,
+  }}>{unit.name.slice(0,3)}</div>);}
+
+// ═══════════════════════════════════════════════════════
+export default function SRPGProto(){
+  const[roster,setRoster]=useState(()=>createRoster());
+  const[units,setUnits]=useState(()=>createStageEnemies(0));
+  const[stage,setStage]=useState(0);
+  const[loopPhase,setLoopPhase]=useState("map"); // "map"|"interval"|"loopClear"|"loopDefeat"
+  const[loopRoster,setLoopRoster]=useState(null); // persistent roster state across maps
+  const[mode,setMode]=useState("select");
+  const[selId,setSelId]=useState(null);
+  const[origPos,setOrigPos]=useState(null);
+  const[moveCells,setMoveCells]=useState([]);
+  const[atkCells,setAtkCells]=useState([]);
+  const[healCells,setHealCells]=useState([]);
+  const[chosenTech,setChosenTech]=useState(null);
+  const[log,setLog]=useState([{text:"── 配置フェーズ ──",type:"phase"}]);
+  const[turn,setTurn]=useState(1);
+  const[phase,setPhase]=useState("deploy");
+  const[deploySelId,setDeploySelId]=useState(null);
+  const[gameOver,setGameOver]=useState(null);
+  const[dmgPops,setDmgPops]=useState([]);
+  const[shaking,setShaking]=useState({});
+  const[banner,setBanner]=useState(null);
+  const[hovId,setHovId]=useState(null);
+  const[hovCell,setHovCell]=useState(null);
+  const[enemyRanges,setEnemyRanges]=useState([]);
+  const[rangeEnemyIds,setRangeEnemyIds]=useState([]);
+  const[pendingLvUp,setPendingLvUp]=useState(null);
+  const[pendingSwap,setPendingSwap]=useState(null);
+  const[pendingMonster,setPendingMonster]=useState(null);
+  const[manaHand,setManaHand]=useState(null); // {range, grabId, cells}
+  const[ctxMenu,setCtxMenu]=useState(null);
+  const[statScreen,setStatScreen]=useState(null);
+  const[statDesc,setStatDesc]=useState("");
+  const[cam,setCam]=useState({x:0,y:0});
+  const dragRef=useRef({dragging:false,sx:0,sy:0,cx:0,cy:0,moved:false});
+  const gameRef=useRef(null);const logRef=useRef(null);
+  const popId=useRef(0);const busyRef=useRef(false);
+  const unitsRef=useRef(units);const levelUpResolveRef=useRef(null);
+  useEffect(()=>{unitsRef.current=units;},[units]);
+
+  const sel=units.find(u=>u.id===selId);
+  const hovUnit=units.find(u=>u.id===hovId&&u.hp>0)||null;
+
+  // Recalculate enemy ranges when units change (death etc)
+  function recalcRanges(ids,curUnits){
+    const liveIds=ids.filter(id=>curUnits.some(u=>u.id===id&&u.hp>0));
+    if(liveIds.length!==ids.length)setRangeEnemyIds(liveIds);
+    const allC=[];for(const id of liveIds){const eu=curUnits.find(u=>u.id===id&&u.hp>0);if(!eu)continue;
+      const movable=getMovable(eu,curUnits);for(const mc of movable){const atk=getAtkCells(mc.x,mc.y,eu.rangeMin,eu.rangeMax);
+        for(const ac of atk){if(!allC.some(c=>c.x===ac.x&&c.y===ac.y))allC.push(ac);}}}
+    setEnemyRanges(allC);
+  }
+  useEffect(()=>{if(rangeEnemyIds.length>0)recalcRanges(rangeEnemyIds,units);},[units]);
+
+  useEffect(()=>{injectCSS();},[]);
+  useEffect(()=>{if(logRef.current)logRef.current.scrollTop=logRef.current.scrollHeight;},[log]);
+  useEffect(()=>{if(gameOver||phase==="deploy"||loopPhase!=="map"||pendingLvUp||busyRef.current)return;
+    if(!units.some(u=>u.team==="player"&&u.hp>0))setGameOver("defeat");
+    else if(!units.some(u=>u.team==="enemy"&&u.hp>0))setGameOver("stageClear");},[units,phase,loopPhase,pendingLvUp]);
+  useEffect(()=>{if(phase!=="player"||gameOver||busyRef.current||pendingLvUp)return;
+    const pa=units.filter(u=>u.team==="player"&&u.hp>0);
+    if(pa.length>0&&pa.every(u=>u.acted))runEnemyPhase();},[units,phase,gameOver,pendingLvUp]);
+
+  const W=ms=>new Promise(r=>setTimeout(r,ms));
+  function addLog(e){setLog(p=>[...p,e]);}
+  function showPop(uid,val,type="dmg"){const id=++popId.current;setDmgPops(p=>[...p,{id,uid,val,type}]);setTimeout(()=>setDmgPops(p=>p.filter(x=>x.id!==id)),900);}
+  function shake(uid){setShaking(p=>({...p,[uid]:true}));setTimeout(()=>setShaking(p=>{const n={...p};delete n[uid];return n;}),400);}
+  function showBanner(t){setBanner(t);setTimeout(()=>setBanner(null),1400);}
+  async function animateMove(uid,path){for(const s of path){setUnits(p=>p.map(u=>u.id===uid?{...u,x:s.x,y:s.y}:u));await W(STEP_MS);}}
+
+  // Scale
+  function getScale(){return Math.min(window.innerWidth/GW,window.innerHeight/GH,1);}
+  const[scale,setScale]=useState(getScale);
+  useEffect(()=>{const h=()=>setScale(getScale());window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
+
+  // Scroll
+  function clampCam(x,y){const cX=MAP_W>GW?Math.max(GW-MAP_W,Math.min(0,x)):0;
+    const cY=MAP_H>GH?Math.max(GH-MAP_H,Math.min(0,y)):0;return{x:cX,y:cY};}
+  function onMD(e){if(e.button!==0)return;setCtxMenu(null);const d=dragRef.current;d.dragging=true;d.sx=e.clientX;d.sy=e.clientY;d.cx=cam.x;d.cy=cam.y;d.moved=false;}
+  function onMM(e){const d=dragRef.current;if(!d.dragging)return;const dx=(e.clientX-d.sx)/scale,dy=(e.clientY-d.sy)/scale;if(Math.abs(dx)>4||Math.abs(dy)>4)d.moved=true;setCam(clampCam(d.cx+dx,d.cy+dy));}
+  function onMU(){dragRef.current.dragging=false;}
+  function gameCoords(e){const r=gameRef.current?.getBoundingClientRect();if(!r)return{gx:0,gy:0};return{gx:(e.clientX-r.left)/scale,gy:(e.clientY-r.top)/scale};}
+
+  // Combat
+  async function runCombat(atkId,defId,tech,curUnits){
+    const atk=curUnits.find(u=>u.id===atkId),def=curUnits.find(u=>u.id===defId);if(!atk||!def)return curUnits;
+    const r=executeCombat(atk,def,tech,curUnits);
+    for(const h of r.hits){
+      if(h.delay>0)await W(h.delay);
+      if(h.phase==="debuff_pop"){showPop(h.uid,h.dmg,"debuff");}
+      else if(h.phase==="buff_pop"){showPop(h.uid,h.dmg,"buff");}
+      else{shake(h.uid);showPop(h.uid,h.dmg,h.phase==="heal"?"heal":h.phase==="pursuit"?"pursuit":"dmg");}
+    }
+    setLog(p=>[...p,...r.logs]);let result=r.units;setUnits(result);
+    // Push effect (投げ飛ばし etc)
+    if(tech?.push){
+      const tgt=result.find(u=>u.id===defId&&u.hp>0);const src=result.find(u=>u.id===atkId);
+      if(tgt&&src){const dx=tgt.x-src.x,dy=tgt.y-src.y;
+        const len=Math.abs(dx)+Math.abs(dy);if(len>0){
+          const nx=tgt.x+(dx!==0?Math.sign(dx):0),ny=tgt.y+(dy!==0?Math.sign(dy):0);
+          if(nx>=0&&nx<COLS&&ny>=0&&ny<ROWS&&T[ny][nx]!==2&&!result.some(u=>u.x===nx&&u.y===ny&&u.hp>0)){
+            result=result.map(u=>u.id===tgt.id?{...u,x:nx,y:ny}:u);setUnits(result);
+            addLog({text:`  ${tgt.name} は押し出された！`,type:"info"});
+          }}}}
+    if(r.expGain){let lu=result.find(u=>u.id===r.expGain.uid);
+      while(lu&&lu.team==="player"&&lu.level<LEVEL_CAP&&lu.exp>=expNext()){await W(400);
+        const{unit:leveled,gains}=applyLevelUp(lu);const cc=getCCOptions(leveled);const parts=getRandParts(leveled);
+        result=result.map(u=>u.id===leveled.id?leveled:u);setUnits(result);
+        addLog({text:`  ${leveled.name} はレベル${leveled.level}になった！`,type:"exp"});
+        await new Promise(resolve=>{setPendingLvUp({unit:leveled,gains,parts,resolve,ccOptions:cc});});
+        result=unitsRef.current;lu=result.find(u=>u.id===r.expGain.uid);}}
+    return result;
+  }
+  async function runAoeCombat(atkId,dir,tech,curUnits){
+    const atk=curUnits.find(u=>u.id===atkId);if(!atk)return curUnits;
+    const r=executeAoeCombat(atk,dir,tech,curUnits);
+    for(const h of r.hits){if(h.delay>0)await W(h.delay);shake(h.uid);showPop(h.uid,h.dmg,h.phase==="heal"?"heal":"dmg");}
+    setLog(p=>[...p,...r.logs]);let result=r.units;setUnits(result);
+    if(r.expGain){let lu=result.find(u=>u.id===r.expGain.uid);
+      while(lu&&lu.team==="player"&&lu.level<LEVEL_CAP&&lu.exp>=expNext()){await W(400);
+        const{unit:leveled,gains}=applyLevelUp(lu);const cc=getCCOptions(leveled);const parts=getRandParts(leveled);
+        result=result.map(u=>u.id===leveled.id?leveled:u);setUnits(result);
+        addLog({text:`  ${leveled.name} はレベル${leveled.level}になった！`,type:"exp"});
+        await new Promise(resolve=>{setPendingLvUp({unit:leveled,gains,parts,resolve,ccOptions:cc});});
+        result=unitsRef.current;lu=result.find(u=>u.id===r.expGain.uid);}}
+    return result;
+  }
+  async function runHeal(healerId,targetId,tech,curUnits){
+    const healer=curUnits.find(u=>u.id===healerId),target=curUnits.find(u=>u.id===targetId);
+    if(!healer||!target)return curUnits;
+    const r=executeHeal(healer,target,tech,curUnits);
+    showPop(targetId,r.healAmt||0,"heal");
+    setLog(p=>[...p,...r.logs]);setUnits(r.units);return r.units;
+  }
+  function onPickCC(clsName){
+    if(!pendingLvUp?.ccOptions)return;
+    const updated=applyCC(pendingLvUp.unit,clsName);const parts=getRandParts(updated);
+    setUnits(p=>p.map(u=>u.id===updated.id?updated:u));
+    addLog({text:`  ${updated.name} は ${clsName} にクラスチェンジ！`,type:"exp"});
+    setPendingLvUp({...pendingLvUp,unit:updated,parts,ccOptions:null});
+  }
+  const ALL_MONSTERS=[
+    {name:"狼",hp:0,str:0,def:-2,int:-2,mov:2,ts:0,ss:0,is:0,desc:"MOV+2 DEF-2 INT-2"},
+    {name:"象",hp:0,str:2,def:4,int:0,mov:-1,ts:0,ss:0,is:0,desc:"ATK+2 DEF+4 MOV-1"},
+    {name:"荷運びゴブリン",hp:0,str:0,def:0,int:0,mov:0,ts:1,ss:1,is:1,desc:"枠+3（技+1/スキル+1/所持品+1）"},
+    {name:"鷹",hp:0,str:0,def:0,int:3,mov:1,ts:0,ss:0,is:0,desc:"INT+3 MOV+1"},
+    {name:"猪",hp:0,str:4,def:0,int:0,mov:0,ts:0,ss:0,is:0,desc:"ATK+4"},
+    {name:"亀",hp:10,str:0,def:2,int:-1,mov:0,ts:0,ss:0,is:0,desc:"HP+10 DEF+2 INT-1"},
+    {name:"蛇",hp:-5,str:0,def:0,int:4,mov:0,ts:0,ss:0,is:0,desc:"INT+4 HP-5"},
+    {name:"山羊",hp:5,str:1,def:1,int:1,mov:0,ts:0,ss:0,is:0,desc:"HP+5 ATK+1 DEF+1 INT+1"},
+  ];
+  function pickMonsters(n=3){
+    const pool=[...ALL_MONSTERS];const picks=[];
+    for(let i=0;i<n&&pool.length>0;i++){const idx=Math.floor(Math.random()*pool.length);picks.push(pool.splice(idx,1)[0]);}
+    return picks;
+  }
+  function onPickPart(part){
+    if(!pendingLvUp)return;const u=pendingLvUp.unit;const sl=getSlots(u);
+    if(part.name==="魔物の首輪"){
+      // Check if item slot available or need swap
+      if((u.items||[]).length>=sl.i){setPendingSwap(part);return;}
+      setPendingMonster({part,choices:pickMonsters(3)});return;
+    }
+    if(part.type==="tech"&&u.techs.length>=sl.t){setPendingSwap(part);return;}
+    if(part.type==="skill"&&u.skills.length>=sl.s){setPendingSwap(part);return;}
+    if(part.type==="item"&&(u.items||[]).length>=sl.i){setPendingSwap(part);return;}
+    const updated=applyPart(u,part);
+    setUnits(p=>p.map(x=>x.id===updated.id?updated:x));const resolve=pendingLvUp.resolve;setPendingLvUp(null);if(resolve)resolve();
+  }
+  function onPickMonster(monster){
+    if(!pendingLvUp||!pendingMonster)return;
+    const u={...pendingLvUp.unit,techs:pendingLvUp.unit.techs.map(t=>({...t})),skills:[...pendingLvUp.unit.skills],
+      items:(pendingLvUp.unit.items||[]).map(it=>({...it})),debuffs:(pendingLvUp.unit.debuffs||[]).map(db=>({...db}))};
+    const itemName=`魔物の首輪（${monster.name}）`;
+    u.items.push({name:itemName,stat:null,val:0,desc:monster.desc});
+    if(monster.hp){u.maxHp+=monster.hp;u.hp=Math.max(1,u.hp+monster.hp);}
+    if(monster.str)u.str+=monster.str;
+    if(monster.def)u.def+=monster.def;
+    if(monster.int)u.int+=monster.int;
+    if(monster.mov)u.mov=Math.max(1,u.mov+monster.mov);
+    if(monster.ts||monster.ss||monster.is){
+      u._bonusSlots={t:monster.ts||0,s:monster.ss||0,i:monster.is||0};
+    }
+    setUnits(p=>p.map(x=>x.id===u.id?u:x));
+    addLog({text:`  ${u.name} は魔物の首輪（${monster.name}）を装着！`,type:"exp"});
+    const resolve=pendingLvUp.resolve;setPendingMonster(null);setPendingLvUp(null);if(resolve)resolve();
+  }
+  function onSwap(oldName){
+    if(!pendingLvUp||!pendingSwap)return;
+    const pu=pendingLvUp.unit;
+    const u={...pu,techs:pu.techs.map(t=>({...t})),skills:[...pu.skills],
+      debuffs:(pu.debuffs||[]).map(db=>({...db})),items:(pu.items||[]).map(it=>({...it}))};
+    const part=pendingSwap;
+    if(part.type==="tech"){
+      u.techs=u.techs.filter(t=>t.name!==oldName);
+      const td=TECHS[part.name];if(td)u.techs.push({...td,uses:td.maxUses});
+    }else if(part.type==="skill"){
+      const old=u.skills.find(s=>s.name===oldName);
+      // Remove old skill stats
+      if(old?.name==="侵食"){u.str-=4;u.def-=4;}
+      else if(old?.stat&&old.val){if(old.stat==="maxHp"){u.maxHp-=old.val;u.hp=Math.min(u.hp,u.maxHp);}else u[old.stat]-=old.val;}
+      u.skills=u.skills.filter(s=>s.name!==oldName);
+      u.skills.push({name:part.name,stat:part.stat,val:part.val,desc:part.desc||""});
+      // Apply new skill stats
+      if(part.name==="侵食"){u.str+=4;u.def+=4;}
+      else if(part.stat&&part.val){if(part.stat==="maxHp"){u.maxHp+=part.val;u.hp+=part.val;}else u[part.stat]+=part.val;}
+    }else if(part.type==="item"){
+      const old=u.items.find(i=>i.name===oldName);
+      // Remove old item stats
+      if(old?.name==="呪いの仮面"){u.str-=3;u.int-=3;u.maxHp+=6;u.hp=Math.min(u.hp+6,u.maxHp);u.def+=1;}
+      else if(old?.name==="将軍の大盾"){u.def-=7;u.mov+=1;}
+      else if(old?.stat&&old.val){if(old.stat==="maxHp"){u.maxHp-=old.val;u.hp=Math.min(u.hp,u.maxHp);}else u[old.stat]-=old.val;}
+      u.items=u.items.filter(i=>i.name!==oldName);
+      u.items.push({name:part.name,stat:part.stat,val:part.val,desc:part.desc,
+        ...(part.name==="魔力の手"?{uses:2,maxUses:2}:{})});
+      // Apply new item stats
+      if(part.name==="呪いの仮面"){u.str+=3;u.int+=3;u.maxHp=Math.max(1,u.maxHp-6);u.hp=Math.max(1,u.hp-6);u.def-=1;}
+      else if(part.name==="将軍の大盾"){u.def+=7;u.mov=Math.max(1,u.mov-1);}
+      else if(part.name==="長弓"){u.techs=u.techs.map(t=>(t.rangeMin>=2&&t.rangeMax>=2)?{...t,rangeMax:t.rangeMax+1}:t);}
+      else if(part.stat&&part.val){if(part.stat==="maxHp"){u.maxHp+=part.val;u.hp+=part.val;}else u[part.stat]+=part.val;}
+    }
+    setUnits(p=>p.map(x=>x.id===u.id?u:x));
+    if(pendingSwap.name==="魔物の首輪"){
+      // After making room, show monster selection
+      setPendingSwap(null);setPendingMonster({part:pendingSwap,choices:pickMonsters(3)});
+      setPendingLvUp({...pendingLvUp,unit:u});return;
+    }
+    const resolve=pendingLvUp.resolve;setPendingSwap(null);setPendingLvUp(null);if(resolve)resolve();
+  }
+  function onCancelSwap(){setPendingSwap(null);setPendingMonster(null);}
+  function onSkipPart(){const resolve=pendingLvUp?.resolve;setPendingSwap(null);setPendingLvUp(null);if(resolve)resolve();}
+
+  // Selection
+  function resetSel(){setSelId(null);setOrigPos(null);setMoveCells([]);setAtkCells([]);setHealCells([]);setChosenTech(null);setManaHand(null);setMode("select");}
+  function cancelMove(){if(origPos&&selId)setUnits(p=>p.map(u=>u.id===selId?{...u,x:origPos.x,y:origPos.y}:u));resetSel();}
+
+  // Cell click
+  function cellClick(cx,cy){
+    if(dragRef.current.moved)return;if(gameOver||busyRef.current||pendingLvUp)return;
+    setCtxMenu(null);setStatScreen(null);
+
+    // ── DEPLOY PHASE ──
+    if(phase==="deploy"){
+      const isZone=DEPLOY_ZONE.some(c=>c.x===cx&&c.y===cy);
+      const placed=units.find(u=>u.team==="player"&&u.x===cx&&u.y===cy);
+      // Click on placed unit → remove back to roster
+      if(placed){
+        setUnits(p=>p.filter(u=>u.id!==placed.id));
+        setRoster(p=>[...p,{...placed,x:-1,y:-1,deployed:false}]);
+        setDeploySelId(null);return;
+      }
+      // Click on deploy zone with selected roster unit → place
+      if(isZone&&deploySelId){
+        const ru=roster.find(u=>u.id===deploySelId);if(!ru)return;
+        const deployCount=units.filter(u=>u.team==="player").length;
+        if(deployCount>=SORTIE_LIMIT){addLog({text:`出撃上限（${SORTIE_LIMIT}体）に達しています`,type:"info"});return;}
+        setRoster(p=>p.filter(u=>u.id!==ru.id));
+        setUnits(p=>[...p,{...ru,x:cx,y:cy,deployed:true}]);
+        setDeploySelId(null);return;
+      }
+      // Click on enemy → show stat
+      const clicked=units.find(u=>u.x===cx&&u.y===cy&&u.hp>0);
+      if(clicked?.team==="enemy"){
+        // Toggle enemy range like normal
+        const eid=clicked.id;let newIds;
+        if(rangeEnemyIds.includes(eid))newIds=rangeEnemyIds.filter(id=>id!==eid);
+        else newIds=[...rangeEnemyIds,eid];
+        setRangeEnemyIds(newIds);recalcRanges(newIds,units);
+      }
+      return;
+    }
+
+    // ── PLAYER PHASE ──
+    if(phase!=="player")return;
+    const clicked=units.find(u=>u.x===cx&&u.y===cy&&u.hp>0);
+    if(mode==="select"){
+      if(clicked?.team==="player"&&!clicked.acted){
+        setSelId(clicked.id);setOrigPos({x:clicked.x,y:clicked.y});
+        setMoveCells(getMovable(clicked,units));setMode("move");
+      }else if(clicked?.team==="enemy"){
+        const eid=clicked.id;let newIds;
+        if(rangeEnemyIds.includes(eid))newIds=rangeEnemyIds.filter(id=>id!==eid);
+        else newIds=[...rangeEnemyIds,eid];
+        setRangeEnemyIds(newIds);
+        const allC=[];for(const id of newIds){const eu=units.find(u=>u.id===id&&u.hp>0);if(!eu)continue;
+          const movable=getMovable(eu,units);for(const mc of movable){const atk=getAtkCells(mc.x,mc.y,eu.rangeMin,eu.rangeMax);
+            for(const ac of atk){if(!allC.some(c=>c.x===ac.x&&c.y===ac.y))allC.push(ac);}}}
+        setEnemyRanges(allC);
+      }
+    }else if(mode==="move"){
+      if(moveCells.some(c=>c.x===cx&&c.y===cy)){setMode("busy");busyRef.current=true;
+        const unit=units.find(u=>u.id===selId);const path=getPath(unit,cx,cy,units);
+        (async()=>{await animateMove(selId,path);setMoveCells([]);setMode("action");busyRef.current=false;})();
+      }else resetSel();
+    }else if(mode==="manahand1"){
+      // Step 1: pick a unit (ally or enemy) in range
+      const mh=manaHand;if(!mh)return;
+      const target=units.find(u=>u.x===cx&&u.y===cy&&u.hp>0&&u.id!==selId);
+      if(target&&mh.cells.some(c=>c.x===cx&&c.y===cy)){
+        // Highlight empty cells in range for drop
+        const emptyCells=mh.cells.filter(c=>!units.some(u2=>u2.x===c.x&&u2.y===c.y&&u2.hp>0)&&T[c.y]?.[c.x]!==2);
+        setManaHand({...mh,grabId:target.id});
+        setHealCells(emptyCells);setMode("manahand2");
+      }else{setHealCells([]);setManaHand(null);setMode("action");}
+    }else if(mode==="manahand2"){
+      // Step 2: pick empty cell in range
+      const mh=manaHand;if(!mh||!mh.grabId)return;
+      if(healCells.some(c=>c.x===cx&&c.y===cy)&&!units.some(u2=>u2.x===cx&&u2.y===cy&&u2.hp>0)){
+        const grabbed=units.find(u=>u.id===mh.grabId);
+        if(grabbed){
+          addLog({text:`${sel.name} の魔力の手 → ${grabbed.name} を移動`,type:"info"});
+          setUnits(p=>p.map(u=>{
+            if(u.id===mh.grabId)return{...u,x:cx,y:cy};
+            if(u.id===selId)return{...u,acted:true,items:u.items.map(it=>it.name==="魔力の手"&&it.uses>0?{...it,uses:it.uses-1}:it)};
+            return u;}));
+          setHealCells([]);setManaHand(null);resetSel();
+        }
+      }else{setHealCells([]);setManaHand(null);setMode("action");}
+    }else if(mode==="aoetarget"){
+      if(atkCells.some(c=>c.x===cx&&c.y===cy)){
+        const dir=cellToDir(sel.x,sel.y,cx,cy);
+        if(dir){
+          setMode("busy");busyRef.current=true;const sid=selId;
+          (async()=>{await runAoeCombat(sid,dir,chosenTech,unitsRef.current);
+            setUnits(p=>p.map(u=>u.id===sid?{...u,acted:true}:u));resetSel();busyRef.current=false;})();
+        }
+      }else{setAtkCells([]);setMode("action");}
+    }else if(mode==="target"){
+      if(clicked?.team==="enemy"&&atkCells.some(c=>c.x===cx&&c.y===cy)){
+        setMode("busy");busyRef.current=true;const sid=selId;
+          (async()=>{await runCombat(sid,clicked.id,chosenTech,unitsRef.current);
+            setUnits(p=>p.map(u=>u.id===sid?{...u,acted:true}:u));resetSel();busyRef.current=false;})();
+      }else{setAtkCells([]);setMode("action");}
+    }else if(mode==="refreshtarget"){
+      if(clicked?.team==="player"&&clicked.id!==selId&&clicked.acted&&healCells.some(c=>c.x===cx&&c.y===cy)){
+        addLog({text:`${sel.name} の リフレッシュ → ${clicked.name} は再行動可能に！`,type:"heal"});
+        const t=sel.techs.find(t=>t.name==="リフレッシュ");
+        setUnits(p=>p.map(u=>{
+          if(u.id===selId)return{...u,acted:true,techs:u.techs.map(tt=>tt.name==="リフレッシュ"&&tt.uses>0?{...tt,uses:tt.uses-1}:tt)};
+          if(u.id===clicked.id)return{...u,acted:false};return u;}));
+        showPop(clicked.id,"再行動","heal");resetSel();
+      }else{setHealCells([]);setMode("action");}
+    }else if(mode==="rescuetarget"){
+      if(clicked?.team==="player"&&clicked.id!==selId&&healCells.some(c=>c.x===cx&&c.y===cy)){
+        const carrier=units.find(u=>u.id===selId);
+        const carried=clicked;
+        addLog({text:`${carrier.name} は ${carried.name} を担いだ！`,type:"info"});
+        const t=carrier.techs.find(t=>t.name===chosenTech.name);
+        setUnits(p=>p.map(u=>{
+          if(u.id===selId)return{...u,acted:true,carried:carried.id,mov:Math.max(1,u.mov-2),
+            techs:u.techs.map(tt=>tt.name===chosenTech?.name&&tt.uses>0?{...tt,uses:tt.uses-1}:tt)};
+          if(u.id===carried.id)return{...u,x:-99,y:-99}; // off map
+          return u;
+        }));resetSel();
+      }else{setHealCells([]);setMode("action");}
+    }else if(mode==="healtarget"){
+      if(clicked?.team==="player"&&clicked.hp<clicked.maxHp&&healCells.some(c=>c.x===cx&&c.y===cy)){
+        setMode("busy");busyRef.current=true;const sid=selId;
+        (async()=>{await runHeal(sid,clicked.id,chosenTech,unitsRef.current);
+          setUnits(p=>p.map(u=>u.id===sid?{...u,acted:true}:u));resetSel();busyRef.current=false;})();
+      }else{setHealCells([]);setMode("action");}
+    }
+  }
+
+  function onRightClick(e,cx,cy){e.preventDefault();e.stopPropagation();setCtxMenu(null);setStatScreen(null);
+    if(phase==="deploy"){
+      const u=units.find(u=>u.x===cx&&u.y===cy&&u.hp>0);
+      if(u){setStatScreen(u.id);}return;
+    }
+    if(mode==="move"||mode==="action"||mode==="target"||mode==="healtarget"||mode==="rescuetarget"||mode==="refreshtarget"||mode==="aoetarget"||mode==="manahand1"||mode==="manahand2"){setManaHand(null);cancelMove();return;}
+    const u=units.find(u=>u.x===cx&&u.y===cy&&u.hp>0);
+    if(u){setStatScreen(u.id);return;}
+    const{gx,gy}=gameCoords(e);setCtxMenu({x:gx,y:gy});}
+
+  function handleAction(act){
+    const u=units.find(u=>u.id===selId);if(!u)return;
+    if(act==="wait"){setUnits(p=>p.map(x=>x.id===selId?{...x,acted:true}:x));resetSel();return;}
+    if(act==="drop"&&u.carried){
+      const adjCells=getAdj(u.x,u.y).filter(c=>c.x>=0&&c.x<COLS&&c.y>=0&&c.y<ROWS
+        &&(T[c.y]?.[c.x]!==2)&&!units.some(u2=>u2.x===c.x&&u2.y===c.y&&u2.hp>0));
+      if(adjCells.length>0){
+        const drop=adjCells[0];const carried=units.find(u2=>u2.id===u.carried);
+        if(carried){addLog({text:`${u.name} は ${carried.name} を降ろした`,type:"info"});
+          setUnits(p=>p.map(x=>{
+            if(x.id===selId)return{...x,carried:null,mov:x.mov+2,acted:true};
+            if(x.id===u.carried)return{...x,x:drop.x,y:drop.y};return x;}));
+          resetSel();return;}}
+      addLog({text:"降ろせる場所がない",type:"info"});return;}
+    // Item use
+    if(act.startsWith("item:")){
+      const itemName=act.slice(5);
+      const item=u.items.find(it=>it.name===itemName&&it.uses>0);
+      if(!item)return;
+      // 魔力の手: 2-step targeting
+      if(itemName==="魔力の手"){
+        const range=Math.floor(u.int/2);
+        const cells=[];
+        for(let cx=0;cx<COLS;cx++)for(let cy=0;cy<ROWS;cy++){
+          if(manhattan(u,{x:cx,y:cy})<=range&&(cx!==u.x||cy!==u.y))cells.push({x:cx,y:cy});}
+        setManaHand({range,grabId:null,cells,itemName});
+        setHealCells(cells);setMode("manahand1");return;
+      }
+      const healAmt=Math.min(item.heal,u.maxHp-u.hp);
+      showPop(u.id,healAmt,"heal");
+      addLog({text:`${u.name} は ${itemName} を使用 → ${healAmt}回復`,type:"heal"});
+      setUnits(p=>p.map(x=>{
+        if(x.id!==selId)return x;
+        const items=x.items.map(it=>it.name===itemName&&it.uses>0?{...it,uses:it.uses-1}:{...it});
+        return{...x,hp:Math.min(x.maxHp,x.hp+healAmt),items,acted:true};
+      }));
+      resetSel();return;
+    }
+    if(act==="plain"&&u.rangeMax>0){setChosenTech(null);setAtkCells(getAtkCells(u.x,u.y,u.rangeMin,u.rangeMax));setMode("target");return;}
+    const tech=TECHS[act];
+    if(tech&&(tech.heal>0||tech.tecHeal)){
+      // Heal targeting
+      setChosenTech(tech);
+      const cells=getTechAtkCells(u.x,u.y,tech,u);
+      setHealCells(cells);setMode("healtarget");
+    }else if(tech?.aoe==="healArea"){
+      // 女神の祝福: self-target area heal
+      const range=Math.floor(u.int/2);const healAmt=u.int;
+      const allies=units.filter(a=>a.team==="player"&&a.hp>0&&a.hp<a.maxHp&&manhattan(u,a)<=range);
+      const t2=u.techs.find(t2=>t2.name===tech.name);
+      if(t2&&t2.uses>0){
+        addLog({text:`${u.name} は ${tech.name} を使った！`,type:"atk"});
+        let upd=units;
+        for(const ally of allies){
+          const amt=Math.min(healAmt,ally.maxHp-ally.hp);
+          addLog({text:`  ${ally.name} を ${amt}回復`,type:"heal"});
+          showPop(ally.id,amt,"heal");
+          upd=upd.map(x=>x.id===ally.id?{...x,hp:Math.min(x.maxHp,x.hp+healAmt)}:x);
+        }
+        upd=upd.map(x=>x.id===selId?{...x,acted:true,techs:x.techs.map(tt=>tt.name===tech.name?{...tt,uses:tt.uses-1}:tt)}:x);
+        setUnits(upd);resetSel();
+      }return;
+    }else if(tech?.aoe==="dir_line"||tech?.aoe==="dir_cross"){
+      // 方向指定AoE: 範囲内セルをハイライト、クリックで方向決定
+      setChosenTech(tech);
+      const cells=getAllAoeCells(u.x,u.y,tech.aoe);
+      setAtkCells(cells);setMode("aoetarget");return;
+    }else if(tech?.selfEnd){
+      // 待機系技: 鉄壁の構え, 報復の鎧, 要塞化
+      const t2=u.techs.find(t2=>t2.name===tech.name);
+      if(t2&&t2.uses>0){
+        addLog({text:`${u.name} は ${tech.name} を使った！`,type:"atk"});
+        let upd={...u,acted:true,techs:u.techs.map(tt=>tt.name===tech.name?{...tt,uses:tt.uses-1}:tt)};
+        if(tech.name==="鉄壁の構え"){upd.def+=4;upd._ironWall=1;addLog({text:`  DEF+4 (1T)`,type:"info"});showPop(u.id,"DEF+4","buff");}
+        if(tech.name==="報復の鎧"){upd._retaliate=1;addLog({text:`  被ダメ30%反射 (1T)`,type:"info"});}
+        if(tech.fortify){upd._fortifyDef=upd.def;upd.def*=2;upd._fortifyTurns=3;addLog({text:`  要塞化: DEF${upd._fortifyDef}→${upd.def} (3T)`,type:"info"});showPop(u.id,"DEF×2","buff");}
+        setUnits(p=>p.map(x=>x.id===selId?upd:x));resetSel();
+      }return;
+    }else if(tech?.name==="リフレッシュ"){
+      setChosenTech(tech);
+      const cells=getTechAtkCells(u.x,u.y,tech,u);
+      setHealCells(cells);setMode("refreshtarget");
+    }else if(tech?.rescue){
+      // 救出: target ally
+      setChosenTech(tech);
+      const cells=getTechAtkCells(u.x,u.y,tech,u);
+      setHealCells(cells);setMode("rescuetarget");
+    }else if(tech){
+      setChosenTech(tech);setAtkCells(getTechAtkCells(u.x,u.y,tech,u));setMode("target");
+    }
+  }
+  function handleEndTurn(){setUnits(p=>p.map(u=>u.team==="player"?{...u,acted:true}:u));setCtxMenu(null);}
+
+  // ═══ ENEMY AI ═══
+
+  // AI: calculate damage for a specific attack
+  function aiDmg(atk,def,mod=1){return Math.max(1,Math.floor(atk*mod)-def);}
+
+  // AI: check if target can counter from distance
+  function aiCanCounter(target,dist){
+    if(target.debuffs?.some(db=>db.name==="反撃不能"))return false;
+    return target.rangeMax>0&&dist>=target.rangeMin&&dist<=target.rangeMax;
+  }
+
+  // AI: select best tech for a target
+  function aiSelectTech(enemy,target,dist){
+    const atkTechs=enemy.techs.filter(t=>t.heal<=0&&!t.tecHeal&&!t.giveHeal&&t.uses>0&&canUseTech(enemy,t)&&dist>=t.rangeMin&&dist<=(t.tecRange?Math.max(1,Math.floor(enemy.int/t.tecRange)):t.rangeMax));
+    const targetDef=target.def+tDef(target.x,target.y);
+    const killTechs=atkTechs.filter(t=>aiDmg(getATK(enemy),targetDef,t.mod)>=target.hp);
+    // Kill: use cheapest (highest maxUses) tech that kills
+    if(killTechs.length>0)return killTechs.reduce((a,b)=>a.maxUses>b.maxUses?a:b);
+    // Debuff: if target not debuffed, prefer debuff tech
+    const hasDebuff=target.debuffs?.length>0;
+    if(!hasDebuff){const debuffTech=atkTechs.find(t=>t.debuff);if(debuffTech)return debuffTech;}
+    // Max damage
+    if(atkTechs.length>0)return atkTechs.reduce((a,b)=>aiDmg(getATK(enemy),targetDef,a.mod)>=aiDmg(getATK(enemy),targetDef,b.mod)?a:b);
+    // Plain attack if in range
+    if(dist>=enemy.rangeMin&&dist<=enemy.rangeMax)return null;
+    return undefined; // can't attack
+  }
+
+  // AI: score a target (higher = more desirable)
+  function aiScoreTarget(enemy,target,fromPos,tech){
+    const dist=manhattan(fromPos,target);
+    const def=target.def+tDef(target.x,target.y);
+    const mod=tech?tech.mod:1;
+    const dmg=aiDmg(getATK(enemy),def,mod);
+    const canKill=dmg>=target.hp;
+    const counterBlocked=tech?.debuff?.name==="反撃不能";
+    const safe=!aiCanCounter(target,dist)||counterBlocked;
+    let score=0;
+    if(canKill)score+=10000+(target.level*10+getATK(target)); // kill priority, prefer high-value
+    if(safe)score+=dmg*10; // safe bonus ≈ doubles dmg weight → safe preferred when dmg >= 50% of best unsafe
+    score+=dmg*10; // damage efficiency
+    score-=dist; // tiebreaker: closer is better
+    return score;
+  }
+
+  // AI: plan action for one enemy (returns {move, target, tech} or {move, target:null} for move-only)
+  function aiPlanAction(enemy,units){
+    const players=units.filter(u=>u.team==="player"&&u.hp>0);
+    if(!players.length)return null;
+    // 挑発チェック: タゲ固定されていたらその対象のみ攻撃
+    const taunter=players.find(p=>(enemy.debuffs||[]).some(db=>db.name==="タゲ固定"));
+    const effectivePlayers=taunter?[taunter]:players;
+
+    // Healer check first
+    const healTech=enemy.techs.find(t=>(t.heal>0||t.tecHeal||t.giveHeal)&&t.uses>0);
+    if(healTech){
+      // Check from current position (healers don't move to heal in current design)
+      const movable=enemy.behavior==="stationary"?[{x:enemy.x,y:enemy.y}]:getMovable(enemy,units);
+      for(const cell of movable){
+        const injured=units.filter(u=>u.team==="enemy"&&u.hp>0&&u.hp<u.maxHp&&u.id!==enemy.id);
+        const hrMax=healTech.tecRange?Math.max(1,Math.floor(enemy.int/healTech.tecRange)):healTech.rangeMax;
+        const inRange=injured.filter(u=>{const d=manhattan(cell,u);return d>=healTech.rangeMin&&d<=hrMax;});
+        if(inRange.length>0){
+          const target=inRange.reduce((b,a)=>(a.maxHp-a.hp)>(b.maxHp-b.hp)?a:b);
+          return{move:cell,target,tech:healTech,isHeal:true};
+        }
+      }
+    }
+
+    const movable=enemy.behavior==="stationary"?[{x:enemy.x,y:enemy.y}]:getMovable(enemy,units);
+
+    // Find best (move, target, tech) combination
+    let bestOption=null,bestScore=-Infinity;
+    for(const cell of movable){
+      for(const p of effectivePlayers){
+        const dist=manhattan(cell,p);
+        // Check plain attack
+        if(dist>=enemy.rangeMin&&dist<=enemy.rangeMax){
+          const tech=aiSelectTech(enemy,p,dist);
+          if(tech!==undefined){
+            const score=aiScoreTarget(enemy,p,cell,tech);
+            if(score>bestScore){bestScore=score;bestOption={move:cell,target:p,tech:tech||null};}
+          }
+        }
+        // Check tech-specific ranges
+        for(const t of enemy.techs){
+          if(t.heal>0||t.uses<=0||!canUseTech(enemy,t))continue;
+          if(dist>=t.rangeMin&&dist<=t.rangeMax){
+            const score=aiScoreTarget(enemy,p,cell,t);
+            if(score>bestScore){bestScore=score;bestOption={move:cell,target:p,tech:t};}
+          }
+        }
+      }
+    }
+
+    if(bestOption)return bestOption;
+
+    // Can't attack: move toward nearest player (aggressive only)
+    if(enemy.behavior==="stationary")return null;
+    const nearest=players.reduce((b,p)=>manhattan(enemy,p)<manhattan(enemy,b)?p:b);
+    let bestCell={x:enemy.x,y:enemy.y},bestD=manhattan(enemy,nearest);
+    for(const c of movable){const d=manhattan(c,nearest);if(d<bestD){bestD=d;bestCell=c;}}
+    if(bestCell.x!==enemy.x||bestCell.y!==enemy.y)return{move:bestCell,target:null,tech:null};
+    return null;
+  }
+
+  // AI: sort enemies by action priority
+  function aiSortEnemies(eids,units){
+    return[...eids].sort((a,b)=>{
+      const ea=units.find(u=>u.id===a),eb=units.find(u=>u.id===b);
+      if(!ea||!eb)return 0;
+      const aDebuff=ea.techs.some(t=>t.debuff&&t.uses>0&&t.heal<=0);
+      const bDebuff=eb.techs.some(t=>t.debuff&&t.uses>0&&t.heal<=0);
+      const aHeal=ea.techs.some(t=>t.heal>0&&t.uses>0);
+      const bHeal=eb.techs.some(t=>t.heal>0&&t.uses>0);
+      // Phase A: debuffers first, then healers
+      if(aDebuff&&!bDebuff)return-1;if(!aDebuff&&bDebuff)return 1;
+      if(aHeal&&!bHeal)return-1;if(!aHeal&&bHeal)return 1;
+      // Phase B: higher ATK first
+      return getATK(eb)-getATK(ea);
+    });
+  }
+
+  // Enemy Phase
+  async function runEnemyPhase(){
+    if(busyRef.current)return;busyRef.current=true;setPhase("enemy");resetSel();setCtxMenu(null);
+    showBanner("ENEMY PHASE");addLog({text:"── 敵軍フェーズ ──",type:"phase"});await W(1400);
+    let cur=unitsRef.current.map(u=>({...u,techs:u.techs.map(t=>({...t})),skills:[...(u.skills||[])],debuffs:(u.debuffs||[]).map(db=>({...db})),items:(u.items||[]).map(it=>({...it}))}));
+    const eids=aiSortEnemies(cur.filter(u=>u.team==="enemy"&&u.hp>0).map(u=>u.id),cur);
+
+    for(const eid of eids){
+      const e=cur.find(u=>u.id===eid);if(!e||e.hp<=0)continue;
+
+      // ── Charge system ──
+      if(e.chargeTech){
+        // Currently charging
+        if(e.chargeCounter>0){
+          e.chargeCounter--;
+          if(e.chargeCounter===0){
+            // Fire charge tech
+            addLog({text:`${e.name} のチャージ完了 → ${e.chargeTech.name} 発動！`,type:"phase"});
+            const players=cur.filter(u=>u.team==="player"&&u.hp>0);
+            const inRange=players.filter(p=>{const d=manhattan(e,p);return d>=e.chargeTech.rangeMin&&d<=e.chargeTech.rangeMax;});
+            if(inRange.length>0){
+              const target=inRange.reduce((a,b)=>b.hp<a.hp?b:a); // lowest HP
+              cur=await runCombat(e.id,target.id,e.chargeTech,cur);await W(400);
+            }else{addLog({text:`  射程内に対象なし`,type:"info"});}
+            // Reset or disable
+            if(e.chargeRepeat){const eu=cur.find(u=>u.id===eid);if(eu)eu.chargeCounter=eu.chargeTurns;
+              addLog({text:`  ${e.name} は再チャージを開始（残り${e.chargeTurns}ターン）`,type:"info"});
+            }else{const eu=cur.find(u=>u.id===eid);if(eu)eu.chargeTurns=0;}
+          }else{
+            addLog({text:`${e.name} のチャージ — 残り${e.chargeCounter}ターン`,type:"info"});
+          }
+          setUnits(cur.map(u=>({...u})));await W(300);continue;
+        }
+        // Start charge (first time, or after repeat)
+        if(e.chargeCounter===0&&e.chargeTurns>0){
+          // Check if charge tech still has uses (if limited)
+          if(e.chargeTech.uses!==undefined&&e.chargeTech.uses<=0){/* no uses left, fall through to normal AI */}
+          else{
+            e.chargeCounter=e.chargeTurns;
+            addLog({text:`${e.name} はチャージを開始した！（残り${e.chargeTurns}ターン）`,type:"phase"});
+            setUnits(cur.map(u=>({...u})));await W(400);continue;
+          }
+        }
+      }
+
+      // ── Normal AI ──
+      const plan=aiPlanAction(e,cur);if(!plan)continue;
+
+      // Heal action
+      if(plan.isHeal){
+        const moved=plan.move.x!==e.x||plan.move.y!==e.y;
+        if(moved){const path=getPath(e,plan.move.x,plan.move.y,cur);cur=cur.map(u=>u.id===e.id?{...u,x:plan.move.x,y:plan.move.y}:u);
+          for(const s of path){setUnits(p=>p.map(u=>u.id===e.id?{...u,x:s.x,y:s.y}:u));await W(STEP_MS);}await W(50);}
+        cur=await runHeal(e.id,plan.target.id,plan.tech,cur);await W(400);continue;
+      }
+
+      // Move
+      const moved=plan.move.x!==e.x||plan.move.y!==e.y;
+      if(moved){const path=getPath(e,plan.move.x,plan.move.y,cur);cur=cur.map(u=>u.id===e.id?{...u,x:plan.move.x,y:plan.move.y}:u);
+        for(const s of path){setUnits(p=>p.map(u=>u.id===e.id?{...u,x:s.x,y:s.y}:u));await W(STEP_MS);}await W(50);}
+
+      // Attack
+      if(plan.target){
+        const me=cur.find(u=>u.id===e.id),tgt=cur.find(u=>u.id===plan.target.id);
+        if(tgt?.hp>0){
+          // Re-select tech based on actual position (may have changed after move)
+          const dist=manhattan(me,tgt);
+          const tech=aiSelectTech(me,tgt,dist);
+          if(tech!==undefined){
+            cur=await runCombat(me.id,tgt.id,tech||null,cur);await W(300);
+          }
+        }
+      }else if(moved){addLog({text:`${e.name} は移動した`,type:"info"});await W(200);}
+    }
+
+    const nt=turn+1;cur=unitsRef.current;
+    // 火傷ダメージ (自軍ターン開始時、全ユニット)
+    for(const u of cur){if(u.hp>0&&(u.debuffs||[]).some(db=>db.name==="火傷")){
+      u.hp=Math.max(0,u.hp-6);addLog({text:`  火傷: ${u.name} に6ダメージ${u.hp<=0?" 【撃破】":""}`,type:"counter"});
+      showPop(u.id,6,"dmg");}}
+    // 侵食ダメージ
+    for(const u of cur){if(u.hp>0&&hasSkill(u,"侵食")){
+      u.hp=Math.max(1,u.hp-3);addLog({text:`  侵食: ${u.name} HP-3`,type:"info"});}}
+    // 鉄壁の構え解除
+    for(const u of cur){if(u._ironWall){u._ironWall--;if(u._ironWall<=0){u.def-=4;delete u._ironWall;}}}
+    // 報復の鎧解除
+    for(const u of cur){if(u._retaliate){u._retaliate--;if(u._retaliate<=0)delete u._retaliate;}}
+    // 要塞化カウントダウン
+    for(const u of cur){if(u._fortifyTurns){u._fortifyTurns--;if(u._fortifyTurns<=0){u.def=u._fortifyDef;delete u._fortifyDef;delete u._fortifyTurns;}}}
+    // 鮮血の鎧DEF+3解除/適用
+    for(const u of cur){if(u._bloodArmorActive){u.def-=3;u._bloodArmorActive=false;}
+      if(u._bloodArmor){u.def+=3;u._bloodArmorActive=true;u._bloodArmor=false;}}
+    // 闘志リセット
+    for(const u of cur){if(u._fightSpirit){u.str-=2;u._fightSpirit=false;}}
+    // ヴァンガード報復リセット+適用
+    for(const u of cur){if(u._revengeActive){u.str-=3;u._revengeActive=false;}
+      if(u._revengePending&&u.hp>0){u.str+=3;u._revengeActive=true;u._revengePending=false;}}
+    // 風まとい: ターン終了時隣接味方のデバフ解除
+    for(const u of cur){if(u.team==="player"&&u.hp>0&&hasSkill(u,"風まとい")){
+      for(const ac of getAdj(u.x,u.y)){const ally=cur.find(u2=>u2.x===ac.x&&u2.y===ac.y&&u2.hp>0&&u2.team==="player"&&u2.id!==u.id);
+        if(ally&&ally.debuffs?.length>0){ally.debuffs=[];addLog({text:`  風まとい: ${ally.name} のデバフ解除`,type:"heal"});}}}}
+    // Remove previous wind blessings, then apply new ones
+    const blessed=new Set();
+    for(const u of cur){if(u.team==="player"&&u.hp>0&&hasSkill(u,"風の祝福")){
+      for(const a of getAdj(u.x,u.y)){const ally=cur.find(u2=>u2.x===a.x&&u2.y===a.y&&u2.hp>0&&u2.team==="player"&&u2.id!==u.id);
+        if(ally)blessed.add(ally.id);}}}
+    setUnits(cur.map(u=>{
+      let base={...u,acted:false,debuffs:(u.debuffs||[]).map(db=>({...db,turns:db.turns-1})).filter(db=>db.turns>0),items:(u.items||[]).map(it=>({...it}))};
+      // Remove old blessing
+      if(base._windBless){base.str-=3;base.int-=3;base._windBless=false;}
+      // Apply new blessing
+      if(blessed.has(u.id)){base.str+=3;base.int+=3;base._windBless=true;
+        showPop(u.id,"ATK+3 INT+3","buff");}
+      return base;}));
+    setTurn(nt);addLog({text:`── ターン${nt}・自軍フェーズ ──`,type:"phase"});
+    setPhase("player");showBanner("PLAYER PHASE");busyRef.current=false;
+  }
+
+  function startGame(){
+    const deployed=units.filter(u=>u.team==="player").length;
+    if(deployed===0){addLog({text:"1体以上配置してください",type:"info"});return;}
+    setPhase("player");setDeploySelId(null);
+    addLog({text:`── ステージ${stage+1} ターン1・自軍フェーズ（${deployed}体出撃）──`,type:"phase"});
+    showBanner("PLAYER PHASE");
+  }
+
+  // Stage clear → interval or loop clear
+  function advanceStage(){
+    // Save surviving players back to loop roster
+    const survivors=units.filter(u=>u.team==="player"&&u.hp>0).map(u=>({...u,x:-1,y:-1,acted:false,deployed:false,
+      techs:u.techs.map(t=>({...t,uses:t.maxUses})),debuffs:[]}));
+    const deadIds=new Set(units.filter(u=>u.team==="player"&&u.hp<=0).map(u=>u.id));
+    // Merge with undeployed roster (units that weren't deployed this map)
+    const allSurvivors=[...survivors,...roster.filter(r=>!deadIds.has(r.id))];
+    if(stage>=NUM_STAGES-1){
+      // Loop clear!
+      setLoopRoster(allSurvivors);setLoopPhase("loopClear");setGameOver(null);return;
+    }
+    // Apply HP% recovery
+    const recovered=allSurvivors.map(u=>({...u,hp:Math.min(u.maxHp,u.hp+Math.ceil(u.maxHp*HP_RECOVERY_PCT))}));
+    setLoopRoster(recovered);setLoopPhase("interval");setGameOver(null);
+  }
+
+  function startNextStage(){
+    const ns=stage+1;setStage(ns);
+    const lr=loopRoster||[];
+    // Reset for next map
+    setRoster(lr.map(u=>({...u,x:-1,y:-1,deployed:false})));
+    setUnits(createStageEnemies(ns));
+    resetSel();setCtxMenu(null);
+    setLog([{text:`── ステージ${ns+1} 配置フェーズ ──`,type:"phase"}]);
+    setTurn(1);setPhase("deploy");setLoopPhase("map");
+    setDmgPops([]);setShaking({});setPendingLvUp(null);setPendingSwap(null);setStatScreen(null);
+    setEnemyRanges([]);setRangeEnemyIds([]);setDeploySelId(null);
+  }
+
+  function handleReset(){busyRef.current=false;uid=0;
+    const freshRoster=createRoster();
+    setRoster(freshRoster);setUnits(createStageEnemies(0));setStage(0);setLoopPhase("map");setLoopRoster(null);
+    resetSel();setCtxMenu(null);
+    setLog([{text:"── ステージ1 配置フェーズ ──",type:"phase"}]);setTurn(1);setPhase("deploy");setGameOver(null);
+    setDmgPops([]);setShaking({});setPendingLvUp(null);setPendingSwap(null);setPendingMonster(null);setStatScreen(null);setEnemyRanges([]);setRangeEnemyIds([]);setDeploySelId(null);}
+
+  // Preview
+  const enemies=units.filter(u=>u.team==="enemy"&&u.hp>0);
+  const preview=(()=>{
+    if(mode!=="target"||!sel||!hovUnit)return null;
+    if(hovUnit.team!=="enemy"||!atkCells.some(c=>c.x===hovUnit.x&&c.y===hovUnit.y))return null;
+    // Skill modifiers for attacker
+    const am=atkModifiers(sel,hovUnit,units);const dm=defModifiers(hovUnit);
+    let myDmg=chosenTech?.debuffOnly?0:calcTechDmg(effectiveAtk(sel,units)+am.bonus,sel.int+intBonus(sel),effectiveDef(hovUnit,units),tDef(hovUnit.x,hovUnit.y),chosenTech);
+    if(!chosenTech?.debuffOnly){myDmg=Math.max(1,Math.floor(myDmg*am.mult));myDmg=Math.max(1,Math.floor(myDmg*dm.pct)-dm.red);}
+    const numHits=chosenTech?.hits||1;
+    const dist=manhattan(sel,hovUnit);
+    const hasBlock=hovUnit.debuffs?.some(db=>db.name==="反撃不能")||(chosenTech?.debuff?.name==="反撃不能");
+    const canC=!hasBlock&&hovUnit.rangeMax>0&&dist>=hovUnit.rangeMin&&dist<=hovUnit.rangeMax;
+    // Counter damage with skill modifiers
+    const amD=defModifiers(sel);const cMod=counterMod(hovUnit);
+    let cDmg=canC?Math.max(1,Math.floor(effectiveAtk(hovUnit,units)*cMod)-(effectiveDef(sel,units)+tDef(sel.x,sel.y))):0;
+    if(canC){cDmg=Math.max(1,Math.floor(cDmg*amD.pct)-amD.red);}
+    const myInPlain=dist>=sel.rangeMin&&dist<=sel.rangeMax;
+    const obsBonus=hasSkill(sel,"観察眼")?15:0;
+    return{target:hovUnit,myDmg:numHits>1?`${myDmg}×${numHits}`:myDmg,cDmg,canC,
+      myPursuitPct:myInPlain?Math.max(0,Math.min(100,(sel.int-hovUnit.int)*PURSUIT_RATE_PER_INT+pursuitBonus(sel))):0,
+      ePursuitPct:0,
+      debuff:chosenTech?.debuff?.name||null,
+      debuffHitPct:chosenTech?.debuff?(
+        (chosenTech.debuff.name==="ATK低下"||chosenTech.debuff.name==="DEF低下"||chosenTech.debuff.name==="タゲ固定"||chosenTech.debuff.autoHit)?100:
+        Math.max(0,Math.min(100,(chosenTech.debuff.baseHit||BASE_DEBUFF_HIT)+(sel.int-hovUnit.int)*DEBUFF_HIT_PER_INT+obsBonus))
+      ):0};})();
+
+  const actData=sel?(()=>{
+    const es=enemies;const allies=units.filter(u=>u.team==="player"&&u.hp>0&&u.hp<u.maxHp);
+    const canPlain=!sel._cantoUsed&&sel.rangeMax>0&&es.some(e=>manhattan(sel,e)>=sel.rangeMin&&manhattan(sel,e)<=sel.rangeMax);
+    const techList=sel._cantoUsed?[]:sel.techs.map(t=>{
+      // INT÷N射程の計算
+      const intRMax=t.tecRange?Math.max(1,Math.floor((sel.int+intBonus(sel))/t.tecRange)):t.rangeMax;
+      // 堅守の祈り: DEF12+で支援射程+1
+      const rBonus=(t.heal>0||t.tecHeal||t.giveHeal)&&hasSkill(sel,"堅守の祈り")&&sel.def>=12?1:0;
+      const effRMax=intRMax+rBonus;
+      if(t.heal>0||t.tecHeal||t.giveHeal){
+        const hpOk=!t.hpCost||sel.hp>t.hpCost;
+        const allAllies=units.filter(u=>u.team==="player"&&u.hp>0&&u.hp<u.maxHp);
+        const hasTarget=allAllies.some(a=>a.id!==sel.id&&manhattan(sel,a)>=t.rangeMin&&manhattan(sel,a)<=effRMax);
+        return{...t,rangeMax:effRMax,ok:t.uses>0&&hasTarget&&canUseTech(sel,t),isHeal:true};}
+      if(t.rescue){const rscTargets=units.filter(u=>u.team==="player"&&u.hp>0&&u.id!==sel.id);
+        const hasTarget=rscTargets.some(a=>manhattan(sel,a)>=t.rangeMin&&manhattan(sel,a)<=t.rangeMax);
+        return{...t,ok:t.uses>0&&hasTarget&&canUseTech(sel,t),isHeal:false};}
+      if(t.aoe==="healArea"){const range=Math.floor(sel.int/2);
+        const hasTarget=units.some(a=>a.team==="player"&&a.hp>0&&a.hp<a.maxHp&&manhattan(sel,a)<=range);
+        return{...t,ok:t.uses>0&&hasTarget&&canUseTech(sel,t),isHeal:true};}
+      if(t.selfEnd){return{...t,ok:t.uses>0&&canUseTech(sel,t),isHeal:false};}
+      if(t.aoe==="dir_line"||t.aoe==="dir_cross"){
+        const aoeCells=getAllAoeCells(sel.x,sel.y,t.aoe);
+        const hasTarget=es.some(e=>aoeCells.some(c=>c.x===e.x&&c.y===e.y));
+        return{...t,ok:t.uses>0&&(hasTarget||true)&&canUseTech(sel,t),isHeal:false};} // always ok if uses left (can aim at empty)
+      if(t.debuffOnly){const hasTarget=es.some(e=>manhattan(sel,e)>=t.rangeMin&&manhattan(sel,e)<=effRMax);
+        return{...t,ok:t.uses>0&&hasTarget&&canUseTech(sel,t),isHeal:false};}
+      const hasTarget=es.some(e=>{const d=manhattan(sel,e);return d>=t.rangeMin&&d<=effRMax;});
+      return{...t,ok:t.uses>0&&hasTarget&&canUseTech(sel,t),isHeal:false};
+    });
+    const itemList=(sel.items||[]).map(it=>({...it,ok:it.uses>0&&sel.hp<sel.maxHp}));
+    return{plain:canPlain,techs:techList,items:itemList};
+  })():null;
+
+  const mapOX=Math.round((GW-MAP_W)/2);const mapOY=Math.round((GH-MAP_H)/2);
+
+  // ═══ RENDER ═══
+  return(
+    <div style={{width:"100vw",height:"100vh",overflow:"hidden",position:"relative",
+      background:"#000",fontFamily:"'Noto Sans JP','Hiragino Sans',sans-serif",color:"#e2e8f0",userSelect:"none"}}>
+      <div ref={gameRef} onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}
+        onContextMenu={e=>e.preventDefault()}
+        style={{width:GW,height:GH,position:"absolute",overflow:"hidden",left:"50%",top:"50%",
+          transform:`translate(-50%,-50%) scale(${scale})`,transformOrigin:"center center",
+          background:"#0c0f1a",cursor:dragRef.current.dragging?"grabbing":"default"}}>
+
+        {/* Map */}
+        <div style={{position:"absolute",left:mapOX+cam.x,top:mapOY+cam.y,width:MAP_W,height:MAP_H}}
+          onMouseLeave={()=>{setHovId(null);setHovCell(null);}}>
+          {T.flatMap((row,ry)=>row.map((t,cx)=>(
+            <div key={`t${cx}-${ry}`} onClick={()=>{setCtxMenu(null);cellClick(cx,ry);}}
+              onContextMenu={e=>onRightClick(e,cx,ry)}
+              onMouseEnter={()=>{const u=units.find(u=>u.x===cx&&u.y===ry&&u.hp>0);setHovId(u?u.id:null);setHovCell({x:cx,y:ry});}}
+              style={{position:"absolute",left:cx*TILE,top:ry*TILE,width:TILE,height:TILE,
+                background:TCOL[t],borderRight:"1px solid rgba(0,0,0,0.2)",borderBottom:"1px solid rgba(0,0,0,0.2)",cursor:"pointer"}}>
+              {moveCells.some(c=>c.x===cx&&c.y===ry)&&<div style={{position:"absolute",inset:2,borderRadius:3,background:"rgba(59,130,246,0.25)",border:"1px solid rgba(59,130,246,0.4)"}}/>}
+              {atkCells.some(c=>c.x===cx&&c.y===ry)&&<div style={{position:"absolute",inset:2,borderRadius:3,background:"rgba(239,68,68,0.25)",border:"1px solid rgba(239,68,68,0.4)"}}/>}
+              {healCells.some(c=>c.x===cx&&c.y===ry)&&<div style={{position:"absolute",inset:2,borderRadius:3,background:"rgba(74,222,128,0.25)",border:"1px solid rgba(74,222,128,0.4)"}}/>}
+              {enemyRanges.some(c=>c.x===cx&&c.y===ry)&&
+                <div style={{position:"absolute",inset:2,borderRadius:3,background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.25)"}}/>}
+              {phase==="deploy"&&DEPLOY_ZONE.some(c=>c.x===cx&&c.y===ry)&&
+                <div style={{position:"absolute",inset:2,borderRadius:3,background:"rgba(59,130,246,0.12)",border:"1px solid rgba(59,130,246,0.25)"}}/>}
+            </div>
+          )))}
+          {units.filter(u=>u.hp>0).map(u=>(
+            <div key={u.id} onClick={()=>{setCtxMenu(null);cellClick(u.x,u.y);}}
+              onContextMenu={e=>onRightClick(e,u.x,u.y)} onMouseEnter={()=>{setHovId(u.id);setHovCell({x:u.x,y:u.y});}}
+              style={{position:"absolute",left:u.x*TILE,top:u.y*TILE,width:TILE,height:TILE,
+                transition:`left ${STEP_MS}ms linear, top ${STEP_MS}ms linear`,
+                display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,
+                opacity:u.acted?0.4:1,zIndex:10,cursor:"pointer"}}>
+              <div style={{animation:shaking[u.id]?"s-shake 0.4s ease-in-out":"none",position:"relative"}}>
+                <div style={{animation:u.chargeCounter>0?"s-charge 1s ease-in-out infinite":"none",borderRadius:5}}>
+                  <UC unit={u} size={34}/></div>
+                {shaking[u.id]&&<div style={{position:"absolute",inset:-8,background:"radial-gradient(circle,rgba(255,255,255,0.7) 0%,transparent 70%)",
+                  animation:"s-flash 0.4s ease-out forwards",pointerEvents:"none"}}/>}
+              </div>
+              <div style={{width:32,height:4,background:"rgba(0,0,0,0.5)",borderRadius:2,overflow:"hidden"}}>
+                <div style={{width:`${(u.hp/u.maxHp)*100}%`,height:"100%",
+                  background:u.hp/u.maxHp>0.5?"#4ade80":u.hp/u.maxHp>0.25?"#facc15":"#ef4444",transition:"width 0.3s"}}/>
+              </div>
+              {u.chargeCounter>0&&<div style={{position:"absolute",top:-6,left:"50%",transform:"translateX(-50%)",
+                background:"rgba(185,28,28,0.9)",color:"#fff",fontSize:8,fontWeight:900,padding:"1px 4px",borderRadius:3,
+                whiteSpace:"nowrap",textShadow:"0 1px 2px rgba(0,0,0,0.5)",border:"1px solid rgba(239,68,68,0.6)"}}>残{u.chargeCounter}</div>}
+              {u.debuffs?.length>0&&<div style={{position:"absolute",top:0,right:2,fontSize:7,color:"#fbbf24",fontWeight:700}}>!</div>}
+              {rangeEnemyIds.includes(u.id)&&<div style={{position:"absolute",top:-2,left:1,fontSize:8,color:"#ef4444",fontWeight:700,textShadow:"0 0 3px rgba(0,0,0,0.8)"}}>◎</div>}
+              {dmgPops.filter(p=>p.uid===u.id).map(p=>{
+                const col=p.type==="heal"?"#4ade80":p.type==="buff"?"#60a5fa":p.type==="debuff"?"#f97316":"#fbbf24";
+                const anim=p.type==="heal"?"s-heal":p.type==="buff"?"s-buff":p.type==="debuff"?"s-debuff":"s-dmg";
+                return(<div key={p.id} style={{position:"absolute",top:-4,left:"50%",transform:"translateX(-50%)",
+                  fontSize:p.type==="buff"||p.type==="debuff"?11:14,fontWeight:900,color:col,
+                  textShadow:"0 1px 3px rgba(0,0,0,0.8)",
+                  animation:`${anim} 0.9s ease-out forwards`,
+                  pointerEvents:"none",zIndex:20}}>
+                  {p.type==="heal"?`+${p.val}`:p.val}
+                </div>);
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* ═══ OVERLAY UI ═══ */}
+
+        {/* Terrain info */}
+        {hovCell&&(()=>{const t=T[hovCell.y]?.[hovCell.x];if(t===undefined)return null;
+          return(<div style={{position:"absolute",top:8,left:10,zIndex:45,background:"linear-gradient(180deg,rgba(40,50,80,0.92),rgba(25,30,55,0.92))",
+            border:"1px solid rgba(180,190,220,0.25)",borderRadius:4,padding:"5px 12px",minWidth:80,animation:"s-slin 0.1s ease-out"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#d4d8e8",textAlign:"center"}}>{TNAME[t]}</div>
+            <div style={{fontSize:10,color:"#8b93a8",display:"flex",gap:8,justifyContent:"center"}}><span>DEF {TDEF[t]}</span></div>
+          </div>);})()}
+
+        {/* Unit hover popup */}
+        {hovUnit&&!pendingLvUp&&!statScreen&&(()=>{
+          const u=hovUnit,isP=u.team==="player";
+          const ux=mapOX+cam.x+u.x*TILE,uy=mapOY+cam.y+u.y*TILE;
+          const popW=230,popH=80;
+          const px=Math.min(Math.max(4,ux-popW/2+TILE/2),GW-popW-4);
+          const py=uy<popH+20?uy+TILE+4:uy-popH-4;
+          return(<div style={{position:"absolute",left:px,top:py,width:popW,
+            background:isP?"rgba(40,55,90,0.93)":"rgba(80,35,35,0.93)",
+            border:`1px solid ${isP?"rgba(120,160,220,0.4)":"rgba(220,120,120,0.4)"}`,
+            borderRadius:6,padding:"6px 10px",zIndex:50,pointerEvents:"none",animation:"s-slin 0.08s ease-out",
+            boxShadow:"0 4px 16px rgba(0,0,0,0.5)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <UC unit={u} size={36}/>
+              <div><div style={{fontSize:14,fontWeight:700,color:"#e8ecf4"}}>{u.name}</div>
+                <div style={{display:"flex",gap:6}}>
+                  <span style={{fontSize:10,color:isP?"#7ba8d9":"#d98b8b",fontWeight:600}}>Lv {u.level}</span>
+                  <span style={{fontSize:11,color:"#c0c8d8"}}>HP <span style={{color:u.hp/u.maxHp>0.5?"#6ee7a0":"#fbbf24",fontWeight:700}}>{u.hp}</span>
+                    <span style={{color:"#7b849c"}}>/{u.maxHp}</span></span>
+                </div>
+                {u.debuffs?.length>0&&<div style={{fontSize:9,color:"#fbbf24"}}>状態: {u.debuffs.map(db=>`${db.name}(${db.turns}T)`).join(", ")}</div>}
+                {u.chargeCounter>0&&<div style={{fontSize:9,color:"#f97316",fontWeight:700}}>チャージ中: {u.chargeTech?.name} 残{u.chargeCounter}T</div>}
+              </div>
+            </div>
+          </div>);
+        })()}
+
+        {/* Combat forecast */}
+        {preview&&(
+          <div style={{position:"absolute",bottom:20,left:"50%",transform:"translateX(-50%)",
+            background:"linear-gradient(180deg,rgba(16,20,36,0.97),rgba(10,12,24,0.97))",borderRadius:12,padding:"16px 44px",
+            display:"flex",alignItems:"center",gap:36,zIndex:55,
+            border:"1px solid rgba(239,68,68,0.3)",boxShadow:"0 6px 36px rgba(0,0,0,0.7),0 0 20px rgba(239,68,68,0.08)"}}>
+            <div style={{textAlign:"center",minWidth:80}}>
+              <UC unit={sel} size={42}/>
+              <div style={{fontSize:16,fontWeight:700,color:"#60a5fa",marginTop:4}}>{sel.name}</div>
+              <div style={{fontSize:13,color:"#94a3b8"}}>HP {sel.hp}/{sel.maxHp}</div>
+            </div>
+            <div style={{textAlign:"center",minWidth:120}}>
+              <div style={{fontSize:20,fontWeight:700,color:"#fbbf24",marginBottom:2}}>→ {preview.myDmg}{preview.myPursuitPct>0?` +追撃${preview.myPursuitPct}%`:""}</div>
+              {preview.debuff&&<div style={{fontSize:11,color:"#fbbf24",marginBottom:2}}>{preview.debuff} {preview.debuffHitPct}%</div>}
+              <div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"4px 0"}}/>
+              {preview.canC?<div style={{fontSize:18,color:"#fca5a5"}}>← {preview.cDmg}</div>
+                :<div style={{fontSize:12,color:"#475569"}}>← 反撃なし</div>}
+            </div>
+            <div style={{textAlign:"center",minWidth:80}}>
+              <UC unit={preview.target} size={42}/>
+              <div style={{fontSize:16,fontWeight:700,color:"#f87171",marginTop:4}}>{preview.target.name}</div>
+              <div style={{fontSize:13,color:"#94a3b8"}}>HP {preview.target.hp}/{preview.target.maxHp}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Action menu */}
+        {mode==="action"&&sel&&(()=>{
+          const ax=Math.min(mapOX+cam.x+sel.x*TILE+TILE+8,GW-170);
+          const ay=Math.max(4,mapOY+cam.y+sel.y*TILE);
+          return(<div onMouseDown={e=>e.stopPropagation()} style={{position:"absolute",left:ax,top:ay,
+            background:"rgba(20,24,39,0.95)",border:"1px solid #334155",borderRadius:6,padding:4,minWidth:140,
+            zIndex:60,animation:"s-fin 0.1s ease-out",boxShadow:"0 4px 16px rgba(0,0,0,0.5)"}}>
+            {actData?.plain&&<MBtn onClick={()=>handleAction("plain")}>⚔ 通常攻撃</MBtn>}
+            {actData?.techs.map(t=><MBtn key={t.name} onClick={()=>handleAction(t.name)} disabled={!t.ok}
+              sub={`${t.uses}/${t.maxUses}`} heal={t.isHeal}>
+              {t.isHeal?"♥":"★"} {t.name}
+            </MBtn>)}
+            {actData?.items.map(it=><MBtn key={it.name} onClick={()=>handleAction(`item:${it.name}`)} disabled={!it.ok}
+              sub={`${it.uses}/${it.maxUses}`} heal>
+              ◈ {it.name}
+            </MBtn>)}
+            {sel?.carried&&<MBtn onClick={()=>handleAction("drop")} heal>↓ 降ろす</MBtn>}
+            <MBtn onClick={()=>handleAction("wait")} dim>◇ 待機</MBtn>
+            <MBtn onClick={cancelMove} warn>✕ 戻る</MBtn>
+          </div>);})()}
+
+        {/* Context menu */}
+        {ctxMenu&&phase==="player"&&!gameOver&&!pendingLvUp&&mode==="select"&&(
+          <div onMouseDown={e=>e.stopPropagation()} style={{position:"absolute",
+            left:Math.min(ctxMenu.x,GW-140),top:Math.min(ctxMenu.y,GH-120),
+            background:"rgba(20,24,39,0.95)",border:"1px solid #334155",borderRadius:6,padding:4,minWidth:120,zIndex:70,
+            animation:"s-fin 0.1s ease-out",boxShadow:"0 4px 16px rgba(0,0,0,0.5)"}}>
+            <MBtn onClick={handleEndTurn}>ターン終了</MBtn>
+            {rangeEnemyIds.length>0&&<MBtn onClick={()=>{setRangeEnemyIds([]);setEnemyRanges([]);setCtxMenu(null);}} warn>マーキング解除</MBtn>}
+            <MBtn onClick={handleReset} dim>リセット</MBtn>
+            <MBtn onClick={()=>setCtxMenu(null)} dim>閉じる</MBtn>
+          </div>
+        )}
+
+        {/* Turn + Log */}
+        <div style={{position:"absolute",top:8,right:10,width:280,zIndex:40}}>
+          <div style={{fontSize:13,fontWeight:700,color:phase==="deploy"?"#facc15":phase==="player"?"#60a5fa":"#f87171",
+            background:"rgba(12,15,26,0.85)",padding:"4px 10px",borderRadius:"4px 4px 0 0",
+            border:"1px solid #1e293b",borderBottom:"none",textAlign:"center"}}>
+            S{stage+1} T{turn} — {phase==="deploy"?"配置":phase==="player"?"自軍":"敵軍"}
+          </div>
+          <div ref={logRef} style={{maxHeight:160,overflowY:"auto",background:"rgba(12,15,26,0.8)",
+            borderRadius:"0 0 6px 6px",padding:6,border:"1px solid #1e293b",borderTop:"none",fontSize:11,lineHeight:1.6}}>
+            {log.slice(-20).map((e,i)=>(
+              <div key={i} style={{color:e.type==="phase"?"#facc15":e.type==="atk"?"#e2e8f0":e.type==="counter"?"#fca5a5":
+                e.type==="followup"?"#c4b5fd":e.type==="exp"?"#4ade80":e.type==="heal"?"#6ee7a0":e.type==="debuff"?"#fbbf24":"#475569",
+                fontWeight:e.type==="phase"?700:400,borderLeft:e.type==="phase"?"2px solid #facc15":"2px solid transparent",paddingLeft:4}}>
+                {e.text}</div>))}
+          </div>
+        </div>
+
+        {/* Stat screen */}
+        {statScreen&&(()=>{
+          const u=units.find(x=>x.id===statScreen)||roster.find(x=>x.id===statScreen)||(loopRoster||[]).find(x=>x.id===statScreen);if(!u)return null;
+          const isP=u.team==="player";const bCol=isP?"rgba(120,160,220,0.5)":"rgba(220,120,120,0.5)";
+          const hBg=isP?"linear-gradient(90deg,rgba(40,60,110,0.95),rgba(30,45,80,0.95))":"linear-gradient(90deg,rgba(110,40,40,0.95),rgba(80,30,30,0.95))";
+          const traitName=getTrait(u);const traitLabel={"canto":"再移動","revenge":"報復ATK+3","miracle":"不屈","shieldAura":"護衛DEF+3","healBoost":"回復+50%","rangeBoost":"遠距離強化"}[traitName]||"";
+          return(<div onClick={()=>{setStatScreen(null);setStatDesc("");}} onContextMenu={e=>{e.preventDefault();setStatScreen(null);setStatDesc("");}}
+            style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",zIndex:350,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",gap:8}}>
+            <div onClick={e=>e.stopPropagation()} style={{width:740,background:"rgba(18,22,40,0.97)",border:`2px solid ${bCol}`,
+              borderRadius:10,overflow:"hidden",animation:"s-fin 0.15s ease-out",boxShadow:"0 8px 48px rgba(0,0,0,0.7)",cursor:"default"}}>
+              {/* Header */}
+              <div style={{background:hBg,padding:"12px 24px",display:"flex",alignItems:"center",gap:18,borderBottom:`1px solid ${bCol}`}}>
+                <UC unit={u} size={50}/><div style={{flex:1}}>
+                  <div style={{fontSize:20,fontWeight:700,color:"#e8ecf4"}}>{u.name}</div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <span style={{fontSize:12,color:"#8b93a8"}}>{isP?u.cls:"敵"}</span>
+                    {traitLabel&&<span style={{fontSize:10,fontWeight:600,padding:"1px 6px",borderRadius:3,background:"rgba(250,204,21,0.15)",color:"#fbbf24",border:"1px solid rgba(250,204,21,0.3)"}}>{traitLabel}</span>}
+                  </div>
+                </div>
+                {isP&&u.tags&&<div style={{display:"flex",gap:4}}>
+                  {u.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:3,
+                    background:t==="fire"?"rgba(239,68,68,0.15)":t==="water"?"rgba(59,130,246,0.15)":"rgba(74,222,128,0.15)",
+                    color:t==="fire"?"#f87171":t==="water"?"#60a5fa":"#4ade80"
+                  }}>{t==="fire"?"火":t==="water"?"水":"風"}</span>)}</div>}
+                <div style={{textAlign:"right"}}><div style={{fontSize:14,color:"#8b93a8"}}>Lv <span style={{fontSize:22,fontWeight:700,color:"#d4d8e8"}}>{u.level}</span></div>
+                  {isP&&<div style={{fontSize:10,color:"#5a6174"}}>{u.level>=LEVEL_CAP?"MAX":`EXP ${u.exp}/${expNext()}`}</div>}</div>
+              </div>
+              {/* Body: 2 columns */}
+              <div style={{padding:"14px 20px",display:"flex",gap:20}}>
+                {/* Left: Stats */}
+                <div style={{width:200,flexShrink:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}>
+                    <span style={{color:"#8b93a8"}}>HP</span>
+                    <span><span style={{color:u.hp/u.maxHp>0.5?"#6ee7a0":"#fbbf24",fontSize:18,fontWeight:700}}>{u.hp}</span>
+                      <span style={{color:"#5a6174",fontSize:12}}>/{u.maxHp}</span></span>
+                  </div>
+                  <div style={{height:8,background:"rgba(0,0,0,0.5)",borderRadius:4,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)",marginBottom:12}}>
+                    <div style={{width:`${(u.hp/u.maxHp)*100}%`,height:"100%",borderRadius:4,
+                      background:u.hp/u.maxHp>0.5?"linear-gradient(90deg,#22c55e,#4ade80)":"linear-gradient(90deg,#eab308,#facc15)"}}/>
+                  </div>
+                  {[["STR",u.str,"#f87171"],["ATK",getATK(u),"#ff6b6b"],["DEF",u.def,"#60a5fa"],["INT",u.int,"#c084fc"],["MOV",u.mov,"#fbbf24"],
+                    ["射程",fmtRange(u.rangeMin,u.rangeMax),"#94a3b8"]].map(([l,v,c])=>(
+                    <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3,
+                      paddingLeft:l==="ATK"?12:0}}>
+                      <span style={{fontSize:l==="ATK"?11:13,color:l==="ATK"?"#5a6174":"#7b849c"}}>{l}{l==="ATK"?" (STR+PP)":""}</span>
+                      <span style={{fontSize:l==="ATK"?14:18,fontWeight:700,color:l==="ATK"?"#e88b8b":c}}>{v}</span></div>))}
+                  {u.pp>0&&<div style={{fontSize:10,color:"#5a6174",marginTop:2}}>PP: {u.pp}</div>}
+                  {u.debuffs?.length>0&&<div style={{marginTop:8,fontSize:11,color:"#fbbf24",fontWeight:600}}>状態: {u.debuffs.map(db=>`${db.name}(${db.turns}T)`).join(", ")}</div>}
+                </div>
+                {/* Right: Tech/Skill/Item */}
+                <div style={{flex:1,borderLeft:"1px solid rgba(255,255,255,0.06)",paddingLeft:18,minHeight:200,overflowY:"auto",maxHeight:400}}>
+                  {/* 技 */}
+                  <div style={{fontSize:12,color:"#7b849c",fontWeight:600,marginBottom:4}}>技 {isP?`${u.techs.length}/${getSlots(u).t}`:""}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:8}}>
+                    {u.techs.map(t=>(
+                      <div key={t.name} onMouseEnter={()=>setStatDesc(`【技】${t.name}｜${t.desc||""} 射程${fmtRange(t.rangeMin,t.rangeMax)}${t.cond?` 要${t.cond.stat.toUpperCase()}${t.cond.val}`:""}`)}
+                        onMouseLeave={()=>setStatDesc("")}
+                        style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",
+                          background:t.uses>0?"rgba(59,130,246,0.08)":"rgba(60,60,80,0.3)",
+                          border:`1px solid ${t.uses>0?"rgba(59,130,246,0.2)":"rgba(60,60,80,0.2)"}`,borderRadius:4,cursor:"default"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:t.uses>0?"#b0c4e8":"#4a5068"}}>{t.name}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:t.uses>0?"#8bb4e8":"#3a3f52"}}>{t.uses}/{t.maxUses}</span>
+                      </div>))}
+                    {isP&&Array.from({length:Math.max(0,getSlots(u).t-u.techs.length)}).map((_,i)=>(
+                      <div key={`et${i}`} style={{padding:"3px 8px",fontSize:11,color:"#2a2f42",background:"rgba(30,30,50,0.2)",border:"1px dashed rgba(100,100,130,0.2)",borderRadius:4}}>空き</div>))}
+                  </div>
+                  {/* スキル */}
+                  <div style={{fontSize:12,color:"#7b849c",fontWeight:600,marginBottom:4}}>スキル</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:8}}>
+                    {(u.skills||[]).map(s=>(
+                      <div key={s.name} onMouseEnter={()=>setStatDesc(`【スキル】${s.name}｜${s.desc||""}`)}
+                        onMouseLeave={()=>setStatDesc("")}
+                        style={{padding:"3px 8px",background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.2)",
+                          borderRadius:4,cursor:"default"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:"#a78bfa"}}>◆ {s.name}</span>
+                      </div>))}
+                    {(u.skills||[]).length===0&&<div style={{fontSize:11,color:"#3a3f52"}}>なし</div>}
+                  </div>
+                  {/* 所持品 */}
+                  <div style={{fontSize:12,color:"#7b849c",fontWeight:600,marginBottom:4}}>所持品 {isP?`${(u.items||[]).length}/${getSlots(u).i}`:""}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                    {(u.items||[]).map(it=>(
+                      <div key={it.name} onMouseEnter={()=>setStatDesc(`【所持品】${it.name}｜${it.desc||""}${it.uses!==undefined?` (${it.uses}/${it.maxUses})`:""}`)}
+                        onMouseLeave={()=>setStatDesc("")}
+                        style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",
+                          background:it.uses!==undefined?(it.uses>0?"rgba(74,222,128,0.08)":"rgba(60,60,80,0.3)"):"rgba(74,222,128,0.08)",
+                          border:`1px solid ${it.uses>0||it.uses===undefined?"rgba(74,222,128,0.2)":"rgba(60,60,80,0.2)"}`,borderRadius:4,cursor:"default"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:it.uses>0||it.uses===undefined?"#6ee7a0":"#4a5068"}}>◈ {it.name}</span>
+                        {it.uses!==undefined&&<span style={{fontSize:11,fontWeight:700,color:it.uses>0?"#6ee7a0":"#3a3f52"}}>{it.uses}/{it.maxUses}</span>}
+                      </div>))}
+                    {isP&&Array.from({length:Math.max(0,getSlots(u).i-(u.items||[]).length)}).map((_,i)=>(
+                      <div key={`ei${i}`} style={{padding:"3px 8px",fontSize:11,color:"#2a2f42",background:"rgba(30,30,50,0.2)",border:"1px dashed rgba(100,100,130,0.2)",borderRadius:4}}>空き</div>))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Description bar */}
+            <div onClick={e=>e.stopPropagation()} style={{width:740,minHeight:36,background:"rgba(18,22,40,0.95)",border:`1px solid ${bCol}`,
+              borderRadius:6,padding:"8px 20px",cursor:"default",transition:"all 0.1s"}}>
+              {statDesc?<div style={{fontSize:12,color:"#c8cee0"}}>{statDesc}</div>
+                :<div style={{fontSize:11,color:"#3a3f52"}}>項目にカーソルを合わせると説明が表示されます ／ クリックで閉じる</div>}
+            </div>
+          </div>);})()}
+
+        {/* Deploy panel */}
+        {phase==="deploy"&&(
+          <div onMouseDown={e=>e.stopPropagation()} style={{position:"absolute",top:8,left:10,width:250,zIndex:60,
+            background:"rgba(18,22,40,0.95)",border:"1px solid rgba(59,130,246,0.3)",borderRadius:8,
+            boxShadow:"0 4px 24px rgba(0,0,0,0.5)",overflow:"hidden",animation:"s-fin 0.2s ease-out"}}>
+            <div style={{background:"linear-gradient(90deg,rgba(37,99,235,0.3),rgba(37,99,235,0.1))",padding:"8px 12px",
+              borderBottom:"1px solid rgba(59,130,246,0.2)"}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#60a5fa",letterSpacing:2}}>配置フェーズ</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:2}}>
+                出撃 {units.filter(u=>u.team==="player").length}/{SORTIE_LIMIT}　青枠に配置
+              </div>
+            </div>
+            <div style={{padding:"6px 8px",maxHeight:340,overflowY:"auto"}}>
+              {roster.map(u=>(
+                <button key={u.id} onClick={()=>setDeploySelId(deploySelId===u.id?null:u.id)}
+                  onContextMenu={e=>{e.preventDefault();setStatScreen(u.id);}}
+                  style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 8px",marginBottom:3,
+                    background:deploySelId===u.id?"rgba(59,130,246,0.2)":"rgba(30,41,59,0.4)",
+                    border:deploySelId===u.id?"1px solid #3b82f6":"1px solid #1e293b",
+                    borderRadius:5,cursor:"pointer",color:"#e2e8f0",textAlign:"left",transition:"border-color 0.1s"}}>
+                  <UC unit={u} size={28}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600}}>{u.name}</div>
+                    <div style={{fontSize:9,color:"#64748b"}}>{u.cls} HP{u.maxHp} ATK{u.str} DEF{u.def} TEC{u.int}</div>
+                  </div>
+                </button>
+              ))}
+              {roster.length===0&&<div style={{fontSize:11,color:"#475569",textAlign:"center",padding:8}}>全員配置済み</div>}
+            </div>
+            <div style={{padding:"6px 8px",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+              <button onClick={startGame} style={{width:"100%",padding:"8px",fontSize:13,fontWeight:700,
+                background:units.some(u=>u.team==="player")?"linear-gradient(135deg,#3b82f6,#2563eb)":"#1e293b",
+                color:units.some(u=>u.team==="player")?"#fff":"#334155",
+                border:"none",borderRadius:5,cursor:units.some(u=>u.team==="player")?"pointer":"default",
+                letterSpacing:3}}>出撃</button>
+            </div>
+          </div>
+        )}
+
+        {/* Phase banner */}
+        {banner&&(<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:200,pointerEvents:"none"}}>
+          <div style={{background:banner.includes("PLAYER")
+            ?"linear-gradient(90deg,transparent,rgba(37,99,235,0.9),rgba(37,99,235,0.9),transparent)"
+            :"linear-gradient(90deg,transparent,rgba(185,28,28,0.9),rgba(185,28,28,0.9),transparent)",
+            padding:"12px 80px",animation:"s-ban 1.4s ease-in-out forwards"}}>
+            <div style={{fontSize:28,fontWeight:900,color:"#fff",letterSpacing:8,textShadow:"0 2px 12px rgba(0,0,0,0.5)"}}>{banner}</div>
+          </div></div>)}
+
+        {/* Level Up */}
+        {pendingLvUp&&(()=>{const lu=pendingLvUp.unit,g=pendingLvUp.gains;
+          const statRows=[["HP",lu.hp,lu.maxHp,g.hp],["STR",lu.str,null,g.str],["ATK",getATK(lu),null,null],["DEF",lu.def,null,g.def],["INT",lu.int,null,g.int]];
+          const sl=getSlots(lu);const typeLabel={tech:"技",skill:"スキル",item:"所持品"};
+          const typeColor={tech:"#fbbf24",skill:"#a78bfa",item:"#6ee7a0"};
+          const tagName=t=>t==="fire"?"火":t==="water"?"水":"風";
+          const tagCol=t=>t==="fire"?"#f87171":t==="water"?"#60a5fa":"#4ade80";
+          const tagBg=t=>t==="fire"?"rgba(239,68,68,0.12)":t==="water"?"rgba(59,130,246,0.12)":"rgba(74,222,128,0.12)";
+          const tagBd=t=>t==="fire"?"rgba(239,68,68,0.3)":t==="water"?"rgba(59,130,246,0.3)":"rgba(74,222,128,0.3)";
+          const swapList=pendingSwap?(
+            pendingSwap.type==="tech"?lu.techs.map(t=>({name:t.name,sub:`${t.desc||""} ${fmtRange(t.rangeMin,t.rangeMax)}`,extra:`${t.uses}/${t.maxUses}`})):
+            pendingSwap.type==="skill"?lu.skills.map(s=>({name:s.name,sub:s.desc||`${s.stat||""}+${s.val||0}`})):
+            (lu.items||[]).map(i=>({name:i.name,sub:i.desc||`${i.stat||""}+${i.val||0}`,extra:i.uses!==undefined?`${i.uses}/${i.maxUses}`:""}))
+          ):[];
+          return(<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
+          <div style={{background:"linear-gradient(135deg,#141827,#1a1f35)",borderRadius:12,padding:24,width:720,maxHeight:"92vh",overflowY:"auto",
+            border:"1px solid rgba(250,204,21,0.3)",boxShadow:"0 0 40px rgba(250,204,21,0.1)",animation:"s-fin 0.3s ease-out"}}>
+            {/* Header */}
+            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
+              <UC unit={lu} size={50}/>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:20,fontWeight:700,color:"#e8ecf4"}}>{lu.name}</span>
+                  {lu.tags?.map(t=><span key={t} style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:4,
+                    background:tagBg(t),color:tagCol(t),border:`1px solid ${tagBd(t)}`}}>{tagName(t)}</span>)}
+                </div>
+                <div style={{fontSize:13,color:"#8b93a8",marginTop:2}}>Lv {lu.level}　{lu.cls}　枠 技{sl.t}/ス{sl.s}/品{sl.i}</div>
+              </div>
+              <div style={{fontSize:24,fontWeight:900,color:"#facc15",letterSpacing:3}}>LEVEL UP!</div>
+            </div>
+
+            {/* 2-column layout */}
+            <div style={{display:"flex",gap:16}}>
+              {/* Left: Stats + owned parts */}
+              <div style={{width:280,flexShrink:0}}>
+                {/* Stats */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px",marginBottom:12,padding:"10px 12px",
+                  background:"rgba(0,0,0,0.3)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}>
+                  {statRows.map(([label,val,max,gain])=>(
+                    <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                      <span style={{fontSize:13,color:"#7b849c"}}>{label}</span>
+                      <span><span style={{fontSize:17,fontWeight:700,color:gain>0?"#4ade80":"#d4d8e8"}}>{label==="HP"?`${val}/${max}`:val}</span>
+                        {gain>0&&<span style={{fontSize:11,fontWeight:700,color:"#4ade80",marginLeft:3}}>+{gain}</span>}</span>
+                    </div>))}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontSize:13,color:"#7b849c"}}>MOV</span>
+                    <span style={{fontSize:17,fontWeight:700,color:"#d4d8e8"}}>{lu.mov}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontSize:13,color:"#7b849c"}}>射程</span>
+                    <span style={{fontSize:17,fontWeight:700,color:"#d4d8e8"}}>{fmtRange(lu.rangeMin,lu.rangeMax)}</span></div>
+                </div>
+                {/* Owned techs */}
+                <div style={{fontSize:12,color:"#7b849c",fontWeight:600,marginBottom:4}}>技 {lu.techs.length}/{sl.t}</div>
+                {lu.techs.map(t=>(
+                  <div key={t.name} style={{fontSize:11,padding:"4px 8px",marginBottom:2,borderRadius:4,
+                    background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.12)",color:"#d4c078"}}>
+                    {t.name} <span style={{color:"#5a6174",fontSize:10}}>{t.desc} {fmtRange(t.rangeMin,t.rangeMax)}</span>
+                  </div>))}
+                {Array.from({length:Math.max(0,sl.t-lu.techs.length)}).map((_,i)=>(
+                  <div key={`et${i}`} style={{fontSize:10,padding:"4px 8px",marginBottom:2,borderRadius:4,
+                    border:"1px dashed rgba(80,80,100,0.25)",color:"#2a2f42"}}>— 空き —</div>))}
+                {/* Owned skills */}
+                <div style={{fontSize:12,color:"#7b849c",fontWeight:600,marginTop:8,marginBottom:4}}>スキル {(lu.skills||[]).length}/{sl.s}</div>
+                {(lu.skills||[]).map(s=>(
+                  <div key={s.name} style={{fontSize:11,padding:"4px 8px",marginBottom:2,borderRadius:4,
+                    background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.12)",color:"#b0a0dc"}}>
+                    {s.name} <span style={{color:"#5a6174",fontSize:10}}>{s.desc||""}</span>
+                  </div>))}
+                {Array.from({length:Math.max(0,sl.s-(lu.skills||[]).length)}).map((_,i)=>(
+                  <div key={`es${i}`} style={{fontSize:10,padding:"4px 8px",marginBottom:2,borderRadius:4,
+                    border:"1px dashed rgba(80,80,100,0.25)",color:"#2a2f42"}}>— 空き —</div>))}
+                {/* Owned items */}
+                <div style={{fontSize:12,color:"#7b849c",fontWeight:600,marginTop:8,marginBottom:4}}>所持品 {(lu.items||[]).length}/{sl.i}</div>
+                {(lu.items||[]).map(it=>(
+                  <div key={it.name} style={{fontSize:11,padding:"4px 8px",marginBottom:2,borderRadius:4,
+                    background:"rgba(110,231,160,0.06)",border:"1px solid rgba(110,231,160,0.12)",color:"#8cc8a0"}}>
+                    {it.name} <span style={{color:"#5a6174",fontSize:10}}>{it.desc||""}{it.uses!==undefined?` ${it.uses}/${it.maxUses}`:""}</span>
+                  </div>))}
+                {Array.from({length:Math.max(0,sl.i-(lu.items||[]).length)}).map((_,i)=>(
+                  <div key={`ei${i}`} style={{fontSize:10,padding:"4px 8px",marginBottom:2,borderRadius:4,
+                    border:"1px dashed rgba(80,80,100,0.25)",color:"#2a2f42"}}>— 空き —</div>))}
+              </div>
+
+              {/* Right: CC / Swap / Parts selection */}
+              <div style={{flex:1,minWidth:0}}>
+                {/* CC selection */}
+                {pendingLvUp.ccOptions?(
+                  <div>
+                    <div style={{fontSize:16,fontWeight:700,color:"#facc15",textAlign:"center",marginBottom:8,letterSpacing:2}}>クラスチェンジ</div>
+                    <div style={{fontSize:12,color:"#94a3b8",textAlign:"center",marginBottom:10}}>クラスを選択:</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {pendingLvUp.ccOptions.opts.map(cls=>{const cd=CLASS_DATA[cls];return(
+                        <button key={cls} onClick={()=>onPickCC(cls)} style={{
+                          background:"rgba(30,41,59,0.6)",border:"1px solid #334155",borderRadius:8,padding:"14px 16px",
+                          cursor:"pointer",color:"#e2e8f0",textAlign:"left",transition:"border-color 0.15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor="#facc15"} onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                          <div style={{fontSize:16,fontWeight:700,color:"#facc15",marginBottom:4}}>{cls}</div>
+                          <div style={{fontSize:11,color:"#8b93a8"}}>
+                            HP{cd.growth.hp} STR{cd.growth.str||cd.growth.str||0} DEF{cd.growth.def} INT{cd.growth.int}</div>
+                          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>枠 技{cd.ts}/ス{cd.ss}/品{cd.is}</div>
+                        </button>);})}
+                    </div>
+                  </div>
+                ):pendingSwap?(
+                  /* Swap mode */
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:typeColor[pendingSwap.type],textAlign:"center",marginBottom:4}}>
+                      【{typeLabel[pendingSwap.type]}】{pendingSwap.name} を獲得</div>
+                    <div style={{fontSize:11,color:"#64748b",textAlign:"center",marginBottom:10}}>
+                      {pendingSwap.type==="tech"?TECHS[pendingSwap.name]?.desc||"":pendingSwap.desc||""}</div>
+                    <div style={{fontSize:12,color:"#94a3b8",textAlign:"center",marginBottom:8}}>入れ替える{typeLabel[pendingSwap.type]}を選択:</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {swapList.map(s=>(
+                        <button key={s.name} onClick={()=>onSwap(s.name)} style={{
+                          display:"flex",justifyContent:"space-between",alignItems:"center",
+                          background:"rgba(30,41,59,0.6)",border:"1px solid #334155",borderRadius:6,padding:"8px 12px",
+                          cursor:"pointer",color:"#e2e8f0",textAlign:"left",transition:"border-color 0.15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor="#f87171"} onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                          <div><div style={{fontSize:13,fontWeight:600,color:"#b0c4e8"}}>{s.name}</div>
+                            <div style={{fontSize:11,color:"#5a6174"}}>{s.sub}</div></div>
+                          {s.extra&&<div style={{fontSize:14,fontWeight:700,color:"#8bb4e8"}}>{s.extra}</div>}
+                        </button>))}
+                    </div>
+                    <button onClick={onCancelSwap} style={{width:"100%",marginTop:10,padding:"7px",fontSize:12,fontWeight:600,
+                      background:"rgba(30,41,59,0.4)",color:"#94a3b8",border:"1px solid #334155",borderRadius:5,cursor:"pointer"}}>
+                      やめる（獲得しない）</button>
+                  </div>
+                ):(
+                  /* Parts selection */
+                  <div>
+                    <div style={{fontSize:13,color:"#94a3b8",textAlign:"center",marginBottom:10}}>ビルドパーツを選択:</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {pendingLvUp.parts.map(p=>{
+                        const statLabel={atk:"STR",def:"DEF",int:"INT",maxHp:"HP",mov:"MOV"};
+                        const pTag=p.tag;const pTagLabel=pTag==="fire"?"火":pTag==="water"?"水":pTag==="wind"?"風":pTag==="any"?"汎":"?";
+                        const pTagC=pTag==="fire"?"#f87171":pTag==="water"?"#60a5fa":pTag==="wind"?"#4ade80":"#94a3b8";
+                        const pTagBg=pTag==="fire"?"rgba(239,68,68,0.15)":pTag==="water"?"rgba(59,130,246,0.15)":pTag==="wind"?"rgba(74,222,128,0.15)":"rgba(148,163,184,0.1)";
+                        return(<button key={p.id} onClick={()=>onPickPart(p)} style={{
+                          background:"rgba(30,41,59,0.6)",border:"1px solid #334155",borderRadius:8,padding:"10px 14px",cursor:"pointer",color:"#e2e8f0",textAlign:"left",transition:"border-color 0.15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor="#60a5fa"} onMouseLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{fontSize:10,fontWeight:700,padding:"1px 5px",borderRadius:3,background:pTagBg,color:pTagC,border:`1px solid ${pTagC}33`}}>{pTagLabel}</span>
+                              <span style={{fontSize:14,fontWeight:700,color:typeColor[p.type]||"#a78bfa"}}>
+                                【{typeLabel[p.type]||p.type}】{p.name}</span>
+                              <span style={{fontSize:10,color:"#5a6174"}}>{p.rarity}</span>
+                            </div>
+                            {p.stat&&p.val?<div style={{fontSize:13,fontWeight:700,color:"#4ade80"}}>
+                              {statLabel[p.stat]||p.stat} {p.stat==="maxHp"?lu.maxHp:lu[p.stat]||0}→{(p.stat==="maxHp"?lu.maxHp:lu[p.stat]||0)+p.val}</div>:null}
+                          </div>
+                          <div style={{fontSize:12,color:"#8b93a8",marginTop:3}}>
+                            {p.type==="tech"?TECHS[p.name]?.desc||"":p.desc||""}</div>
+                        </button>);})}
+                      {pendingLvUp.parts.length===0&&(<div style={{textAlign:"center",color:"#475569",fontSize:12,padding:12}}>
+                        取得可能なパーツがありません
+                        <button onClick={onSkipPart} style={{display:"block",margin:"8px auto 0",background:"#334155",color:"#94a3b8",
+                          border:"none",borderRadius:5,padding:"6px 18px",cursor:"pointer",fontSize:12}}>閉じる</button></div>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div></div>);})()}
+
+        {/* Game Over */}
+        {/* Stage Clear */}
+        {gameOver==="stageClear"&&(<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+          <div style={{textAlign:"center",animation:"s-fin 0.5s ease-out"}}>
+            <div style={{fontSize:40,fontWeight:900,letterSpacing:6,color:"#4ade80",
+              textShadow:"0 0 40px rgba(74,222,128,0.5)",marginBottom:4}}>STAGE CLEAR</div>
+            <div style={{fontSize:16,color:"#94a3b8",marginBottom:6}}>ステージ {stage+1} / {NUM_STAGES}</div>
+            <div style={{fontSize:13,color:"#64748b",marginBottom:20}}>Turn {turn}</div>
+            <button onClick={advanceStage} style={{background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",border:"none",borderRadius:6,
+              padding:"10px 36px",fontSize:15,fontWeight:700,cursor:"pointer",letterSpacing:2}}>
+              {stage>=NUM_STAGES-1?"結果を見る":"次のステージへ"}</button>
+          </div></div>)}
+
+        {/* Defeat */}
+        {gameOver==="defeat"&&(<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+          <div style={{textAlign:"center",animation:"s-fin 0.5s ease-out"}}>
+            <div style={{fontSize:48,fontWeight:900,letterSpacing:8,color:"#ef4444",
+              textShadow:"0 0 40px rgba(239,68,68,0.5)",marginBottom:8}}>DEFEAT</div>
+            <div style={{fontSize:14,color:"#64748b",marginBottom:24}}>ステージ {stage+1} Turn {turn}</div>
+            <button onClick={handleReset} style={{background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",border:"none",borderRadius:6,
+              padding:"8px 30px",fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:2}}>最初からやり直す</button>
+          </div></div>)}
+
+        {/* Interval */}
+        {loopPhase==="interval"&&loopRoster&&(<div style={{position:"absolute",inset:0,background:"rgba(10,14,30,0.97)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+          <div style={{width:560,background:"linear-gradient(135deg,#141827,#1a1f35)",borderRadius:12,padding:24,
+            border:"1px solid rgba(59,130,246,0.3)",boxShadow:"0 8px 48px rgba(0,0,0,0.7)",animation:"s-fin 0.3s ease-out"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontSize:22,fontWeight:900,color:"#60a5fa",letterSpacing:3}}>INTERVAL</div>
+              <div style={{fontSize:13,color:"#64748b"}}>ステージ {stage+1} → {stage+2}</div>
+            </div>
+            <div style={{fontSize:12,color:"#4ade80",marginBottom:12}}>HP {Math.round(HP_RECOVERY_PCT*100)}% 回復</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+              {loopRoster.map(u=>(
+                <div key={u.id} onClick={()=>setStatScreen(u.id)} onContextMenu={e=>{e.preventDefault();setStatScreen(u.id);}}
+                  style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
+                  background:"rgba(30,41,59,0.5)",borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",cursor:"pointer",transition:"border-color 0.15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(96,165,250,0.4)"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.06)"}>
+                  <UC unit={u} size={28}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{u.name} <span style={{fontSize:10,color:"#64748b"}}>Lv{u.level} {u.cls}</span></div>
+                    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      <div style={{flex:1,height:4,background:"rgba(0,0,0,0.4)",borderRadius:2,overflow:"hidden"}}>
+                        <div style={{width:`${(u.hp/u.maxHp)*100}%`,height:"100%",borderRadius:2,
+                          background:u.hp/u.maxHp>0.5?"#4ade80":u.hp/u.maxHp>0.25?"#facc15":"#ef4444"}}/>
+                      </div>
+                      <span style={{fontSize:10,color:"#94a3b8"}}>{u.hp}/{u.maxHp}</span>
+                    </div>
+                  </div>
+                </div>))}
+            </div>
+            <div style={{padding:"12px",background:"rgba(0,0,0,0.3)",borderRadius:6,marginBottom:16,textAlign:"center"}}>
+              <div style={{fontSize:13,color:"#64748b",marginBottom:4}}>ショップ（準備中）</div>
+              <div style={{fontSize:11,color:"#475569"}}>将来的にビルドパーツの売買ができるようになります</div>
+            </div>
+            <button onClick={startNextStage} style={{width:"100%",padding:"10px",fontSize:15,fontWeight:700,
+              background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",border:"none",borderRadius:6,
+              cursor:"pointer",letterSpacing:3}}>ステージ {stage+2} へ出撃</button>
+          </div>
+        </div>)}
+
+        {/* Loop Clear */}
+        {loopPhase==="loopClear"&&(<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.9)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}}>
+          <div style={{textAlign:"center",animation:"s-fin 0.5s ease-out"}}>
+            <div style={{fontSize:52,fontWeight:900,letterSpacing:8,color:"#facc15",
+              textShadow:"0 0 60px rgba(250,204,21,0.5)",marginBottom:8}}>LOOP CLEAR</div>
+            <div style={{fontSize:16,color:"#94a3b8",marginBottom:6}}>全{NUM_STAGES}ステージ制覇</div>
+            <div style={{fontSize:13,color:"#64748b",marginBottom:24}}>
+              生存: {(loopRoster||[]).length}名</div>
+            <button onClick={handleReset} style={{background:"linear-gradient(135deg,#facc15,#eab308)",color:"#1a1f35",border:"none",borderRadius:6,
+              padding:"10px 36px",fontSize:15,fontWeight:700,cursor:"pointer",letterSpacing:2}}>新しいループを開始</button>
+          </div></div>)}
+      </div>
+    </div>
+  );
+}
+
+function MBtn({children,onClick,disabled,dim,warn,sub,heal}){
+  return(<button onClick={onClick} disabled={disabled} style={{
+    display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",padding:"5px 8px",marginBottom:1,
+    background:warn?"rgba(127,29,29,0.4)":heal?"rgba(34,197,94,0.1)":dim?"rgba(30,41,59,0.3)":"rgba(30,41,59,0.5)",
+    color:disabled?"#334155":warn?"#fca5a5":heal?"#6ee7a0":dim?"#64748b":"#e2e8f0",
+    border:`1px solid ${disabled?"#1e293b":warn?"rgba(239,68,68,0.2)":heal?"rgba(74,222,128,0.2)":"#334155"}`,
+    borderRadius:4,fontSize:11,fontWeight:600,cursor:disabled?"default":"pointer",textAlign:"left",opacity:disabled?0.4:1,
+  }}><span>{children}</span>{sub&&<span style={{fontSize:9,color:"#64748b"}}>{sub}</span>}</button>);
+}

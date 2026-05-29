@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>SRPG Data Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f172a;color:#e2e8f0;font-family:'Noto Sans JP','Hiragino Sans','Yu Gothic',sans-serif;overflow:hidden;touch-action:manipulation}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#1e293b}
+::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+input,select,textarea{font-family:inherit;font-size:14px}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+@media(max-width:767px){.desk{display:none!important}}
+@media(min-width:768px){.mob{display:none!important}}
+.save-bar{position:sticky;bottom:0;background:#1e293b;border-top:1px solid #334155;padding:10px 16px;display:flex;gap:8px;z-index:10}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+document.addEventListener('focusin', e => { if (e.target.type === 'number') requestAnimationFrame(() => e.target.select()); });
+const {useState,useRef,useEffect,useMemo,useCallback}=React;
+
+// ── Constants ──
+const TT=[{id:'flatAdd',l:'固定加算',s:'加'},{id:'mult',l:'倍率',s:'倍'},{id:'fixed',l:'固定ダメ',s:'固'},{id:'intRef',l:'INT参照',s:'魔'},{id:'heal',l:'回復',s:'回'},{id:'debuffOnly',l:'デバフ専',s:'妨'},{id:'buff',l:'バフ',s:'強'},{id:'special',l:'特殊',s:'特'}];
+const TAGS=[{id:'fire',l:'火',c:'#ef4444'},{id:'water',l:'水',c:'#3b82f6'},{id:'wind',l:'風',c:'#22c55e'},{id:'light',l:'光',c:'#f59e0b'},{id:'dark',l:'闇',c:'#8b5cf6'},{id:'none',l:'無',c:'#94a3b8'}];
+const TAG_ORDER=['fire','water','wind','light','dark','none',''];
+const RAR=[{id:'C',l:'C',c:'#94a3b8'},{id:'U',l:'U',c:'#3b82f6'},{id:'R',l:'R',c:'#f59e0b'}];
+const STATS=['hp','str','def','int','mov'];
+const DISPLAY_OPTS=[{id:'full',l:'名前+数値'},{id:'nameOnly',l:'名前のみ'},{id:'hidden',l:'非表示'}];
+const EF_TR_MAP={always:'常時',onAttack:'攻撃時',onDefend:'防御時',onHit:'命中時',onCombat:'戦闘後',onDamaged:'被ダメ時',onKill:'撃破時',onHeal:'回復時',turnStart:'ターン開始',turnEnd:'ターン終了',onEnemyAttackBefore:'敵攻撃前',onAcquire:'取得時',afterAction:'行動後',onLevelUp:'レベルアップ時'};
+const EF_SC_MAP={self:'自身',target:'対象',attacker:'攻撃者',adjAlly:'隣接味方',adjEnemy:'隣接敵',adjTarget:'対象隣接',killAdjEnemy:'撃破隣接敵'};
+const EF_TY_MAP={statMod:'ステ補正',statScale:'ステ倍率',dmgReduce:'被ダメ減',fixedDmg:'固定ダメ',heal:'回復',healMult:'回復倍率',healBonus:'回復ボーナス',debuffHitBonus:'デバフ命中+',applyDebuff:'デバフ付与',cleanse:'デバフ解除',counterGen:'カウンター生成',negate:'無効化',rangeExtend:'射程拡張',ghostMove:'すり抜け移動',grantTech:'技付与',grantSkill:'スキル付与',removeTech:'技消失',removeSkill:'スキル消失',delayedStatMod:'遅延ステ補正',dotDamage:'継続ダメ',preemptive:'先制',extraAction:'追加行動',dropBonus:'ドロップ+',canto:'再移動',miracle:'不屈',substitute:'身代わり',moveType:'移動タイプ',pursuitMod:'追撃率補正',slotBonus:'枠追加',system:'システム'};
+const EF_TR=Object.keys(EF_TR_MAP);const EF_SC=Object.keys(EF_SC_MAP);const EF_TY=Object.keys(EF_TY_MAP);
+const TECH_EF_TR_MAP={onAttack:'攻撃時',onHit:'命中時',onKill:'撃破時',onCombat:'戦闘後',onAcquire:'取得時',turnStart:'ターン開始',turnEnd:'ターン終了'};
+const TECH_EF_TR=Object.keys(TECH_EF_TR_MAP);
+
+// ── Styles ──
+const iS={background:'#0f172a',color:'#e2e8f0',border:'1px solid #334155',borderRadius:6,padding:'8px 10px',fontSize:14,outline:'none',width:'100%',minHeight:44};
+const iSm={...iS,padding:'6px 8px',fontSize:13};
+const iNum={...iS,width:70,textAlign:'center'};
+const btnP={padding:'10px 16px',fontSize:13,fontWeight:600,border:'none',borderRadius:6,cursor:'pointer',minHeight:44};
+const lbl={fontSize:11,color:'#64748b',marginBottom:4,marginTop:12};
+const crd={background:'#1e293b',border:'1px solid #334155',borderRadius:8,padding:12,marginBottom:8};
+const rowS={display:'flex',gap:8,alignItems:'center'};
+const chip=(a,c)=>({padding:'6px 12px',fontSize:12,fontWeight:600,borderRadius:16,cursor:'pointer',border:'none',minHeight:36,background:a?c+'30':'#1e293b',color:a?c:'#64748b',outline:a?`1px solid ${c}`:'1px solid #334155'});
+
+let _dragIdx=null;
+function ListItem({selected,onClick,onUp,onDown,onDup,onDel,first,last,idx,onReorder,children}){
+  const [dragOver,setDragOver]=useState(false);
+  const [ctx,setCtx]=useState(null);
+  const canDrag=idx!=null&&onReorder;
+  const longRef=useRef(null);
+  function openCtx(ex,ey){
+    const actions=[];
+    if(onUp&&!first)actions.push({label:'↑ 上へ移動',fn:onUp});
+    if(onDown&&!last)actions.push({label:'↓ 下へ移動',fn:onDown});
+    if(onDup)actions.push({label:'⧉ 複製',fn:onDup});
+    if(onDel){actions.push({sep:true});actions.push({label:'✕ 削除',fn:onDel,danger:true});}
+    if(actions.length)setCtx({x:Math.min(ex,window.innerWidth-140),y:Math.min(ey,window.innerHeight-actions.length*36-20),actions});
+  }
+  return(<div onClick={onClick}
+    draggable={canDrag?true:undefined}
+    onContextMenu={e=>{e.preventDefault();openCtx(e.clientX,e.clientY);}}
+    onTouchStart={e=>{longRef.current=setTimeout(()=>{const t=e.touches[0];openCtx(t.clientX,t.clientY);},500);}}
+    onTouchEnd={()=>{if(longRef.current){clearTimeout(longRef.current);longRef.current=null;}}}
+    onTouchMove={()=>{if(longRef.current){clearTimeout(longRef.current);longRef.current=null;}}}
+    onDragStart={canDrag?e=>{_dragIdx=idx;e.dataTransfer.effectAllowed='move';}:undefined}
+    onDragOver={canDrag?e=>{e.preventDefault();e.dataTransfer.dropEffect='move';setDragOver(true);}:undefined}
+    onDragLeave={canDrag?()=>setDragOver(false):undefined}
+    onDrop={canDrag?e=>{e.preventDefault();setDragOver(false);if(_dragIdx!=null&&_dragIdx!==idx)onReorder(_dragIdx,idx);_dragIdx=null;}:undefined}
+    onDragEnd={()=>{_dragIdx=null;setDragOver(false);}}
+    style={{padding:'10px 12px',marginBottom:3,borderRadius:6,cursor:canDrag?'grab':'pointer',display:'flex',alignItems:'center',gap:6,background:dragOver?'rgba(59,130,246,0.25)':selected?'rgba(59,130,246,0.15)':'#1e293b',border:dragOver?'1px solid rgba(59,130,246,0.7)':selected?'1px solid rgba(59,130,246,0.4)':'1px solid #334155',transition:'background 0.1s'}}>
+    <div style={{flex:1,minWidth:0}}>{children}</div>
+    {ctx&&<>
+      <div onClick={e=>{e.stopPropagation();setCtx(null);}} style={{position:'fixed',inset:0,zIndex:998}}/>
+      <div style={{position:'fixed',left:ctx.x,top:ctx.y,zIndex:999,background:'#1e293b',border:'1px solid #475569',borderRadius:8,padding:4,minWidth:120,boxShadow:'0 8px 24px rgba(0,0,0,0.5)'}}>
+        {ctx.actions.map((a,i)=>a.sep?<div key={i} style={{height:1,background:'#334155',margin:'4px 0'}}/>:
+          <button key={i} onClick={e=>{e.stopPropagation();setCtx(null);a.fn();}} style={{display:'block',width:'100%',padding:'8px 12px',fontSize:12,color:a.danger?'#fca5a5':'#e2e8f0',background:'transparent',border:'none',cursor:'pointer',textAlign:'left',borderRadius:4}} onMouseEnter={e=>e.target.style.background='#334155'} onMouseLeave={e=>e.target.style.background='transparent'}>{a.label}</button>
+        )}
+      </div>
+    </>}
+  </div>);
+}
+function DualLayout({list,detail,sel,onBack}){
+  return(<div style={{display:'flex',height:'100%',overflow:'hidden'}}>
+    <div className="desk" style={{width:320,borderRight:'1px solid #334155',display:'flex',flexDirection:'column',flexShrink:0}}>{list}</div>
+    <div className="desk" style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>{detail}</div>
+    <div className="mob" style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {sel==null?list:(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <button onClick={onBack} style={{...btnP,background:'#334155',color:'#94a3b8',margin:12,marginBottom:0,flexShrink:0}}>← 一覧</button>{detail}
+      </div>)}
+    </div>
+  </div>);
+}
+
+// ── Shared: Cond Editor (ドロップダウン) ──
+const COND_TYPES=[{id:'',l:'条件なし'},{id:'selfHpPct',l:'自HP%'},{id:'targetHpPct',l:'対象HP%'},{id:'stat',l:'ステ参照'},{id:'counter',l:'カウンター'},{id:'barehanded',l:'無手'},{id:'techRangeMin',l:'技射程≥'},{id:'ownTurn',l:'自ターン'}];
+function CondEditor({cond,onChange}){
+  const ct=!cond?'':cond.ownTurn?'ownTurn':cond.barehanded?'barehanded':cond.selfHpPct?'selfHpPct':cond.targetHpPct?'targetHpPct':cond.stat?'stat':cond.counter?'counter':cond.techRangeMin?'techRangeMin':'';
+  function setType(t){
+    if(!t){onChange(undefined);return;}
+    const c={};
+    if(t==='selfHpPct')c.selfHpPct='<=50';
+    if(t==='targetHpPct')c.targetHpPct='<=50';
+    if(t==='stat'){c.stat='str';c.op='>=';c.val=10;}
+    if(t==='counter'){c.counter='';c.min=1;}
+    if(t==='barehanded')c.barehanded=true;
+    if(t==='techRangeMin')c.techRangeMin=2;
+    if(t==='ownTurn')c.ownTurn=true;
+    onChange(c);
+  }
+  function uc(u){onChange({...(cond||{}),...u});}
+  return(<div style={{background:'#1e293b',border:'1px solid #334155',borderRadius:4,padding:8,marginTop:6}}>
+    <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+      <span style={{fontSize:10,color:'#f59e0b'}}>cond:</span>
+      <select value={ct} onChange={e=>setType(e.target.value)} style={{...iSm,width:120}}>
+        {COND_TYPES.map(c=><option key={c.id} value={c.id}>{c.l}</option>)}
+      </select>
+      {ct==='selfHpPct'&&<input value={cond?.selfHpPct||'<=50'} onChange={e=>uc({selfHpPct:e.target.value})} style={{...iSm,width:70}} placeholder="<=50"/>}
+      {ct==='targetHpPct'&&<input value={cond?.targetHpPct||'<=50'} onChange={e=>uc({targetHpPct:e.target.value})} style={{...iSm,width:70}} placeholder="<=50"/>}
+      {ct==='stat'&&<>
+        <select value={cond?.stat||'str'} onChange={e=>uc({stat:e.target.value})} style={{...iSm,width:65}}>{STATS.map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
+        <select value={cond?.op||'>='} onChange={e=>uc({op:e.target.value})} style={{...iSm,width:55}}>{['>=','<=','>','<','=='].map(o=><option key={o} value={o}>{o}</option>)}</select>
+        <input type="number" value={cond?.val||0} onChange={e=>uc({val:+e.target.value})} style={{...iNum,width:50}}/>
+      </>}
+      {ct==='counter'&&<>
+        <input value={cond?.counter||''} onChange={e=>uc({counter:e.target.value})} style={{...iSm,width:80}} placeholder="カウンター名"/>
+        <span style={{fontSize:10,color:'#64748b'}}>≥</span>
+        <input type="number" value={cond?.min||cond?.cost||0} onChange={e=>uc({min:+e.target.value})} style={{...iNum,width:45}}/>
+      </>}
+      {ct==='techRangeMin'&&<input type="number" value={cond?.techRangeMin||2} min={1} onChange={e=>uc({techRangeMin:+e.target.value})} style={{...iNum,width:50}}/>}
+    </div>
+  </div>);
+}
+
+// ── Shared: Effects Panel ──
+function EffectsPanel({effects,onChange,triggerOpts,triggerMap,counterNames}){
+  const trOpts=triggerOpts||EF_TR;const trMap=triggerMap||EF_TR_MAP;
+  function add(){onChange([...(effects||[]),{trigger:trOpts[0]||'always',scope:'self',type:'statMod',mods:{}}]);}
+  function ue(i,u){const fx=[...(effects||[])];fx[i]={...fx[i],...u};onChange(fx);}
+  function rm(i){onChange((effects||[]).filter((_,j)=>j!==i));}
+  function ueCond(i,c){const fx=[...(effects||[])];if(c)fx[i]={...fx[i],cond:c};else{const {cond,...rest}=fx[i];fx[i]=rest;}onChange(fx);}
+  return(<>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+      <span style={{fontSize:11,color:'#94a3b8'}}>エフェクト ({(effects||[]).length})</span>
+      <button onClick={add} style={{fontSize:12,padding:'6px 12px',background:'#3b82f6',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',minHeight:32}}>+ 追加</button>
+    </div>
+    {(effects||[]).map((fx,i)=>(<div key={i} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,marginBottom:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>[{i+1}]{fx.cond&&<span style={{color:'#f59e0b',marginLeft:4}}>⚡</span>}</span>
+        <button onClick={()=>rm(i)} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button></div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+        {[['trigger',trOpts,trMap],['scope',EF_SC,EF_SC_MAP],['type',EF_TY,EF_TY_MAP]].map(([f,opts,map])=>(<div key={f} style={{flex:1,minWidth:110}}>
+          <div style={{fontSize:10,color:'#475569',marginBottom:2}}>{f==='trigger'?'発動条件':f==='scope'?'対象':'効果タイプ'}</div>
+          <select value={fx[f]||0} onChange={e=>ue(i,{[f]:e.target.value})} style={{...iSm,width:'100%'}}>
+            {opts.map(o=><option key={o} value={o}>{map[o]} ({o})</option>)}
+          </select>
+        </div>))}</div>
+      <CondEditor cond={fx.cond} onChange={c=>ueCond(i,c)}/>
+      {/* 値ソース選択（fixedDmg/dotDamage/heal） */}
+      {['fixedDmg','dotDamage','heal'].includes(fx.type)&&<div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginTop:6}}>
+        <span style={{fontSize:11,color:'#94a3b8'}}>値:</span>
+        <select value={fx.source||''} onChange={e=>{const s=e.target.value;if(s)ue(i,{source:s,counter:fx.counter||'',mult:fx.mult||1,value:undefined});else{const {source,counter,mult,...rest}=fx;ue(i,{...rest,value:fx.value||0,trigger:fx.trigger,scope:fx.scope,type:fx.type});}}} style={{...iSm,width:90}}>
+          <option value="">固定値</option><option value="counter">カウンター</option></select>
+        {fx.source==='counter'?<>
+          <span style={{fontSize:11,color:'#94a3b8'}}>名:</span><select value={fx.counter||''} onChange={e=>ue(i,{counter:e.target.value})} style={{...iSm,width:80}}>
+            <option value="">-</option>{(counterNames||[]).map(n=><option key={n} value={n}>{n}</option>)}</select>
+          <span style={{fontSize:11,color:'#94a3b8'}}>×</span><input type="number" value={fx.mult||1} step={0.1} onChange={e=>ue(i,{mult:+e.target.value})} style={iNum}/>
+        </>:<>
+          <input type="number" value={fx.value||0} onChange={e=>ue(i,{value:+e.target.value})} style={iNum}/>
+        </>}
+      </div>}
+      {/* statMod簡易入力 */}
+      {fx.type==='statMod'&&<div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginTop:6}}>
+        {STATS.map(s=><div key={s} style={{display:'flex',alignItems:'center',gap:2}}><span style={{fontSize:11,color:'#94a3b8'}}>{s.toUpperCase()}:</span>
+          <input type="number" value={(fx.mods||{})[s]||0} onChange={e=>{const m={...(fx.mods||{})};if(+e.target.value)m[s]=+e.target.value;else delete m[s];ue(i,{mods:m});}} style={{...iNum,width:50}}/></div>)}
+      </div>}
+      {/* counterGen簡易入力 */}
+      {fx.type==='counterGen'&&<div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginTop:6}}>
+        <span style={{fontSize:11,color:'#94a3b8'}}>カウンター:</span><select value={fx.counter||''} onChange={e=>ue(i,{counter:e.target.value})} style={{...iSm,width:80}}>
+          <option value="">-</option>{(counterNames||[]).map(n=><option key={n} value={n}>{n}</option>)}</select>
+        <span style={{fontSize:11,color:'#94a3b8'}}>量:</span><input type="number" value={fx.amount||0} onChange={e=>ue(i,{amount:+e.target.value})} style={iNum}/>
+        <span style={{fontSize:11,color:'#94a3b8'}}>上限:</span><input type="number" value={fx.max||99} onChange={e=>ue(i,{max:+e.target.value||undefined})} style={iNum}/>
+        {fx.trigger==='onCombat'&&<>
+          <label style={{fontSize:11,color:'#94a3b8',display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}>
+            <input type="checkbox" checked={!!fx.hitCheck} onChange={e=>{if(e.target.checked)ue(i,{hitCheck:{baseHit:70}});else{const{hitCheck,...rest}=fx;ue(i,rest);}}}/> 命中判定</label>
+          {fx.hitCheck&&<>
+            <span style={{fontSize:10,color:'#64748b'}}>基礎%:</span>
+            <input type="number" value={fx.hitCheck.baseHit||70} min={0} max={100} onChange={e=>ue(i,{hitCheck:{...fx.hitCheck,baseHit:+e.target.value}})} style={{...iNum,width:50}}/>
+          </>}
+        </>}
+      </div>}
+      <div style={{fontSize:10,color:'#475569',marginBottom:2,marginTop:8}}>パラメータ (JSON)</div>
+      <textarea value={JSON.stringify(Object.fromEntries(Object.entries(fx).filter(([k])=>!['trigger','scope','type','cond'].includes(k))),null,2)}
+        onChange={e=>{try{const p=JSON.parse(e.target.value);const base={trigger:fx.trigger,scope:fx.scope,type:fx.type,...p};if(fx.cond)base.cond=fx.cond;ue(i,base);}catch{}}}
+        style={{...iS,minHeight:80,fontFamily:'monospace',fontSize:12}} rows={5}/>
+    </div>))}
+    {(effects||[]).length===0&&<div style={{fontSize:12,color:'#475569',textAlign:'center',padding:8}}>エフェクトなし</div>}
+  </>);
+}
+
+// ── DataLoader ──
+const ALL_FILES={techs:'../src/data/techs.json',parts:'../src/data/parts.json',terrains:'../src/data/terrains.json',classes:'../src/data/classes.json',units:'../src/data/units.json',enemies:'../src/data/enemies.json',items:'../src/data/items.json',monsters:'../src/data/monsters.json',traits:'../src/data/traits.json',minions:'../src/data/minions.json',counters:'../src/data/counters.json'};
+const REQ_FILES=['techs','parts'];
+function DataLoader({onReady}){
+  const [st,setSt]=useState({});const [d,setD]=useState({});const [ld,setLd]=useState(true);
+  useEffect(()=>{(async()=>{const dd={};const ss={};
+    if(location.protocol==='file:'){Object.keys(ALL_FILES).forEach(k=>{dd[k]=null;ss[k]='fail';});
+    }else{const entries=Object.entries(ALL_FILES);const results=await Promise.allSettled(entries.map(([k,p])=>fetch(p).then(r=>{if(!r.ok)throw 0;return r.json();})));
+      entries.forEach(([k],i)=>{if(results[i].status==='fulfilled'){dd[k]=results[i].value;ss[k]='ok';}else{dd[k]=null;ss[k]='fail';}});}
+    setD(dd);setSt(ss);setLd(false);const allOk=Object.keys(ALL_FILES).every(k=>ss[k]==='ok');if(allOk)onReady(dd);})();},[]);
+  function hf(k,e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{setD(p=>({...p,[k]:JSON.parse(ev.target.result)}));setSt(p=>({...p,[k]:'ok'}));}catch(err){alert('Error: '+err.message);}};r.readAsText(f);}
+  if(ld)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#64748b'}}>読み込み中...</div>;
+  const reqOk=REQ_FILES.every(k=>st[k]==='ok');const allOk=Object.keys(ALL_FILES).every(k=>st[k]==='ok');if(allOk)return null;
+  return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',padding:16}}>
+    <div style={{background:'#1e293b',borderRadius:12,padding:24,border:'1px solid #334155',maxWidth:480,width:'100%'}}>
+      <h2 style={{fontSize:16,marginBottom:12,color:'#f59e0b'}}>データ読み込み</h2>
+      {Object.entries(ALL_FILES).map(([k,p])=>{const fn=p.split('/').pop();const req=REQ_FILES.includes(k);
+        return(<div key={k} style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
+          <span style={{fontSize:12,flex:1}}>{fn}{req&&<span style={{color:'#f87171'}}> *</span>}</span>
+          <label style={{padding:'6px 12px',background:'#334155',color:'#94a3b8',borderRadius:6,fontSize:11,cursor:'pointer',minHeight:32,display:'flex',alignItems:'center'}}>選択<input type="file" accept=".json" onChange={e=>hf(k,e)} style={{display:'none'}}/></label>
+          <span style={{fontSize:11,color:st[k]==='ok'?'#22c55e':'#64748b',width:16}}>{st[k]==='ok'?'✓':'✗'}</span>
+        </div>);})}
+      <button disabled={!reqOk} onClick={()=>onReady(d)} style={{...btnP,width:'100%',marginTop:12,background:reqOk?'#3b82f6':'#334155',color:reqOk?'#fff':'#64748b'}}>{allOk?'開始':'開始（一部未読込）'}</button>
+    </div></div>);
+}
+
+// ════════════════════════════════
+// ═══ Tech Editor ═══
+// ════════════════════════════════
+function TechEditor({techs,setTechs,parts,setParts,counterNames}){
+  const [sel,setSel]=useState(null);
+  const [draft,setDraft]=useState(null); // edited copy
+  const [dirty,setDirty]=useState(false);
+  const [flt,setFlt]=useState('');const [tFlt,setTFlt]=useState('');const [gFlt,setGFlt]=useState('');
+
+  const names=useMemo(()=>Object.keys(techs).filter(k=>!k.startsWith('_')),[techs]);
+  const filtered=useMemo(()=>names.filter(n=>{
+    if(flt&&!n.includes(flt))return false;if(tFlt&&techs[n].type!==tFlt)return false;
+    if(gFlt==='_none'&&techs[n].tag)return false;if(gFlt&&gFlt!=='_none'&&(techs[n].tag||'')!==gFlt)return false;return true;
+  }),[names,flt,tFlt,gFlt,techs]);
+
+  // parts内で対応するtechパーツを見つけるヘルパー
+  const partForTech=useCallback((name)=>(parts||[]).find(p=>p.type==='tech'&&(p.techRef||p.name)===name),[parts]);
+  // 登録状態バッジ用
+  const isRegistered=useCallback((name)=>!!partForTech(name),[partForTech]);
+
+  function selectTech(name){
+    setSel(name);setDraft(name?JSON.parse(JSON.stringify(techs[name])):null);setDirty(false);
+  }
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udc(u){setDraft(p=>({...p,cond:{...(p.cond||{}),...u}}));setDirty(true);}
+  function saveDraft(){
+    if(!sel||!draft)return;
+    setTechs(p=>({...p,[sel]:draft}));
+    // parts同期: tag/rarityを対応する技パーツに書き戻す
+    setParts(prev=>prev.map(p=>{
+      if(p.type==='tech'&&(p.techRef||p.name)===sel){
+        return{...p,tag:draft.tag||p.tag,rarity:draft.rarity||p.rarity};
+      }
+      return p;
+    }));
+    setDirty(false);
+  }
+  function discardDraft(){if(!sel)return;setDraft(JSON.parse(JSON.stringify(techs[sel])));setDirty(false);}
+
+  function mv(name,dir){const ks=Object.keys(techs);const i=ks.indexOf(name);const ni=i+dir;if(ni<0||ni>=ks.length)return;[ks[i],ks[ni]]=[ks[ni],ks[i]];const o={};ks.forEach(k=>{o[k]=techs[k];});setTechs(o);}
+  function reorderTechs(fi,ti){const fn=filtered[fi],tn=filtered[ti];const ks=Object.keys(techs);const a=ks.indexOf(fn),b=ks.indexOf(tn);if(a<0||b<0)return;ks.splice(a,1);ks.splice(b,0,fn);const o={};ks.forEach(k=>{o[k]=techs[k];});setTechs(o);}
+  function addT(){const n=prompt('技名:');if(!n||techs[n])return;setTechs(p=>({...p,[n]:{type:'flatAdd',mod:0,rangeMin:1,rangeMax:1,maxUses:3,desc:'',tag:'',rarity:''}}));selectTech(n);}
+  function dupT(name){
+    let nn=name+'_copy';let c=2;while(techs[nn]){nn=name+'_copy'+c;c++;}
+    const ks=Object.keys(techs);const idx=ks.indexOf(name);
+    const o={};ks.forEach((k,i)=>{o[k]=techs[k];if(i===idx)o[nn]=JSON.parse(JSON.stringify(techs[name]));});
+    setTechs(o);selectTech(nn);
+  }
+  function sortByTag(){
+    const ks=Object.keys(techs).filter(k=>!k.startsWith('_'));
+    const cmt=Object.keys(techs).filter(k=>k.startsWith('_'));
+    ks.sort((a,b)=>{const ta=TAG_ORDER.indexOf(techs[a].tag||'');const tb=TAG_ORDER.indexOf(techs[b].tag||'');const ia=ta<0?99:ta;const ib=tb<0?99:tb;return ia-ib;});
+    const o={};cmt.forEach(k=>{o[k]=techs[k];});ks.forEach(k=>{o[k]=techs[k];});setTechs(o);
+  }
+  function renT(){if(!sel)return;const n=prompt('新しい技名:',sel);if(!n||n===sel||techs[n])return;
+    const saved=dirty?draft:techs[sel];
+    setTechs(p=>{const o={};Object.keys(p).forEach(k=>{o[k===sel?n:k]=p[k];});if(dirty)o[n]=saved;return o;});setSel(n);setDraft(JSON.parse(JSON.stringify(saved)));setDirty(false);}
+  function delT(){if(!sel||!confirm(`"${sel}"を削除?`))return;setTechs(p=>{const o={...p};delete o[sel];return o;});setSel(null);setDraft(null);setDirty(false);}
+  function chgType(nt){
+    const o=draft||{};
+    const b={...o,type:nt};
+    // Clean type-specific fields
+    delete b.mod;delete b.mult;delete b.hits;delete b.drain;delete b.fixed;delete b.hpCost;
+    delete b.intMult;delete b.flatAdd;delete b.defIgnore;delete b.healMult;delete b.healFixed;
+    delete b.buff;delete b.duration;delete b.selfEnd;delete b.subType;delete b.summon;delete b.count;
+    delete b.selfOnly;delete b.buffCounter;delete b.buffAmount;delete b.buffHitCheck;
+    if(nt==='flatAdd')b.mod=o.mod||0;
+    if(nt==='mult'){b.mult=o.mult||1.0;}
+    if(nt==='fixed'){b.fixed=o.fixed||0;}
+    if(nt==='intRef'){b.intMult=o.intMult||1.0;if(o.flatAdd)b.flatAdd=o.flatAdd;}
+    if(nt==='heal'){b.healMult=o.healMult||1.0;}
+    if(nt==='buff'){b.selfOnly=true;}
+    if(nt==='selfBuff'){b.buff=o.buff||{};b.duration=o.duration||1;}
+    if(nt==='special'){b.subType=o.subType||'';}
+    setDraft(b);setDirty(true);
+  }
+
+  const t=draft; // shorthand
+
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{padding:12,borderBottom:'1px solid #334155',display:'flex',flexDirection:'column',gap:6}}>
+      <input value={flt} onChange={e=>setFlt(e.target.value)} placeholder="🔍 検索" style={{...iS,fontSize:13}}/>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setTFlt('')} style={chip(!tFlt,'#e2e8f0')}>全型</button>
+        {TT.map(x=><button key={x.id} onClick={()=>setTFlt(x.id===tFlt?'':x.id)} style={chip(tFlt===x.id,'#3b82f6')}>{x.s}</button>)}
+      </div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全属</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}</button>)}
+        <button onClick={()=>setGFlt(gFlt==='_none'?'':'_none')} style={chip(gFlt==='_none','#475569')}>?</button>
+      </div>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {filtered.map((n,fi)=>{const x=techs[n];const tt=TT.find(z=>z.id===x.type);const tg=TAGS.find(z=>z.id===x.tag);const ii=names.indexOf(n);
+        return(<ListItem key={n} selected={sel===n} onClick={()=>selectTech(n)} onUp={()=>mv(n,-1)} onDown={()=>mv(n,1)} onDup={()=>dupT(n)} onDel={()=>{if(!confirm(`"${n}"を削除?`))return;setTechs(p=>{const o={...p};delete o[n];return o;});if(sel===n){setSel(null);setDraft(null);setDirty(false);}}} first={ii===0} last={ii===names.length-1} idx={fi} onReorder={reorderTechs}>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <span style={{fontSize:10,padding:'2px 6px',borderRadius:4,background:'#334155',color:'#94a3b8'}}>{tt?.s||'?'}</span>
+            {tg&&<span style={{fontSize:10,padding:'2px 5px',borderRadius:4,color:tg.c,background:tg.c+'20',fontWeight:700}}>{tg.l}</span>}
+            {x.rarity&&<span style={{fontSize:10,padding:'2px 5px',borderRadius:4,color:RAR.find(r=>r.id===x.rarity)?.c||'#94a3b8',background:'#334155'}}>{x.rarity}</span>}
+            <span style={{fontSize:13,fontWeight:600}}>{n}</span>
+            {n===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+            {x.enemyOnly&&<span style={{fontSize:9,color:'#f87171'}}>敵専</span>}
+            {x.noSlot&&<span style={{fontSize:9,color:'#fbbf24'}}>枠外</span>}
+            {x.stealth&&<span style={{fontSize:9,color:'#475569'}}>隠</span>}
+            {x.consumable&&<span style={{fontSize:9,color:'#f97316'}}>消耗</span>}
+            {(x.effects||[]).length>0&&<span style={{fontSize:9,color:'#f59e0b'}}>{x.effects.length}fx</span>}
+            {!isRegistered(n)&&<span style={{fontSize:9,padding:'1px 4px',borderRadius:3,background:'rgba(239,68,68,0.15)',color:'#f87171'}}>未登録</span>}
+          </div>
+          <div style={{fontSize:11,color:'#64748b',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.desc||''}</div>
+        </ListItem>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155',display:'flex',gap:6}}>
+      <button onClick={addT} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>+ 技を追加</button>
+      <button onClick={sortByTag} style={{...btnP,background:'#334155',color:'#94a3b8'}} title="火→水→風→光→闇→他">タグ順</button>
+    </div>
+  </div>);
+
+  const detV=t?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{sel}</h2>
+      <button onClick={renT} style={{...btnP,background:'#334155',color:'#94a3b8',padding:'6px 12px',fontSize:12}}>名前変更</button>
+      <button onClick={delT} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+
+    {/* Tag+Rarity */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>タグ</div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}><button onClick={()=>ud({tag:''})} style={chip(!t.tag,'#475569')}>なし</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>ud({tag:x.id})} style={chip(t.tag===x.id,x.c)}>{x.l}</button>)}</div>
+      <div style={lbl}>レアリティ</div>
+      <div style={{display:'flex',gap:4}}><button onClick={()=>ud({rarity:''})} style={chip(!t.rarity,'#475569')}>なし</button>
+        {RAR.map(x=><button key={x.id} onClick={()=>ud({rarity:x.id})} style={chip(t.rarity===x.id,x.c)}>{x.l}</button>)}</div>
+    </div>
+
+    {/* Damage Type */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>ダメージタイプ</div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{TT.map(x=><button key={x.id} onClick={()=>chgType(x.id)} style={chip(t.type===x.id,'#3b82f6')}>{x.l}</button>)}</div>
+
+      {/* Core damage fields per type */}
+      {t.type==='flatAdd'&&(<><div style={lbl}>固定加算値</div><input type="number" value={t.mod??0} onChange={e=>ud({mod:+e.target.value})} style={iNum}/></>)}
+      {t.type==='mult'&&(<><div style={lbl}>倍率</div><input type="number" value={t.mult??1} step={0.1} onChange={e=>ud({mult:+e.target.value})} style={iNum}/></>)}
+      {t.type==='fixed'&&(<><div style={lbl}>固定ダメージ</div><input type="number" value={t.fixed??0} onChange={e=>ud({fixed:+e.target.value})} style={iNum}/></>)}
+      {t.type==='intRef'&&(<>
+        <div style={lbl}>INT倍率</div><input type="number" value={t.intMult??1} step={0.1} onChange={e=>ud({intMult:+e.target.value})} style={iNum}/>
+        <div style={lbl}>固定加算</div><input type="number" value={t.flatAdd||0} onChange={e=>ud({flatAdd:+e.target.value||undefined})} style={iNum}/>
+      </>)}
+      {t.type==='heal'&&(<>
+        <div style={lbl}>回復倍率 (INT×)</div><input type="number" value={t.healMult??0} step={0.1} onChange={e=>ud({healMult:+e.target.value||undefined})} style={iNum}/>
+        <div style={lbl}>固定回復加算</div><input type="number" value={t.healFixed||0} onChange={e=>ud({healFixed:+e.target.value||undefined})} style={iNum}/>
+      </>)}
+      {t.type==='buff'&&(<>
+        <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:4}}>
+          <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+            <input type="checkbox" checked={t.selfOnly||false} onChange={e=>{
+              if(e.target.checked)ud({selfOnly:true,rangeMin:undefined,rangeMax:undefined,rangeType:undefined,rangeDivisor:undefined});
+              else ud({selfOnly:undefined,rangeMin:1,rangeMax:1});
+            }}/> 自身のみ対象</label>
+        </div>
+        {!t.selfOnly&&<div style={{fontSize:10,color:'#475569',marginTop:4}}>射程内の味方を選択。射程0を含めば自身も対象</div>}
+        <div style={lbl}>付与カウンター</div>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          <select value={t.buffCounter||''} onChange={e=>ud({buffCounter:e.target.value||undefined})} style={{...iSm,width:120}}>
+            <option value="">-</option>{(counterNames||[]).map(n=><option key={n} value={n}>{n}</option>)}</select>
+          <span style={{fontSize:11,color:'#94a3b8'}}>量:</span>
+          <input type="number" value={t.buffAmount||1} min={1} onChange={e=>ud({buffAmount:+e.target.value})} style={{...iNum,width:50}}/>
+        </div>
+        <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}}>
+          <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+            <input type="checkbox" checked={!!t.buffHitCheck} onChange={e=>{
+              if(e.target.checked)ud({buffHitCheck:{baseHit:70}});else ud({buffHitCheck:undefined});
+            }}/> 命中判定</label>
+          {t.buffHitCheck&&<>
+            <span style={{fontSize:10,color:'#64748b'}}>基礎%:</span>
+            <input type="number" value={t.buffHitCheck.baseHit||70} min={0} max={100} onChange={e=>ud({buffHitCheck:{...t.buffHitCheck,baseHit:+e.target.value}})} style={{...iNum,width:50}}/>
+          </>}
+        </div>
+      </>)}
+      {t.type==='special'&&(<>
+        <div style={lbl}>サブタイプ</div><select value={t.subType||0} onChange={e=>ud({subType:e.target.value||undefined})} style={{...iSm,width:180}}>
+          <option value="">-</option><option value="rescue">rescue (救出)</option><option value="refresh">refresh (再行動)</option><option value="summon">summon (召喚)</option><option value="telekinesis">telekinesis (魔力の手)</option><option value="bloodPay">bloodPay (HP消費効果)</option><option value="curseHeal">curseHeal (呪い回復)</option><option value="uncurse">uncurse (呪い解除)</option><option value="extraAction">extraAction (追加行動)</option></select>
+        {t.subType==='summon'&&(<><div style={lbl}>召喚名</div><input value={t.summon||0} onChange={e=>ud({summon:e.target.value})} style={iSm}/><div style={lbl}>数</div><input type="number" value={t.count||1} min={1} onChange={e=>ud({count:+e.target.value})} style={iNum}/></>)}
+      </>)}
+    </div>
+
+    {/* Options */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>オプション</div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12,color:'#94a3b8'}}>ヒット数:</span><input type="number" value={t.hits||1} min={1} onChange={e=>ud({hits:+e.target.value>1?+e.target.value:undefined})} style={iNum}/></div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12,color:'#94a3b8'}}>ドレイン率:</span><input type="number" value={t.drain||0} step={0.1} min={0} max={1} onChange={e=>ud({drain:+e.target.value||undefined})} style={iNum}/></div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12,color:'#94a3b8'}}>HPコスト:</span><input type="number" value={t.hpCost||0} min={0} onChange={e=>ud({hpCost:+e.target.value||undefined})} style={iNum}/></div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:12,color:'#94a3b8'}}>押出:</span><input type="number" value={t.push||0} min={0} onChange={e=>ud({push:+e.target.value||undefined})} style={{...iNum,width:50}}/></div>
+      </div>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.defIgnore||false} onChange={e=>ud({defIgnore:e.target.checked||undefined})}/> DEF無視</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.noAction||false} onChange={e=>ud({noAction:e.target.checked||undefined})}/> 行動消費なし(1T1回)</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.enemyOnly||false} onChange={e=>ud({enemyOnly:e.target.checked||undefined})}/> 敵専用</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.noSlot||false} onChange={e=>ud({noSlot:e.target.checked||undefined})}/> スロット非消費</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.stealth||false} onChange={e=>ud({stealth:e.target.checked||undefined})}/> ステルス(UI非表示)</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.consumable||false} onChange={e=>ud({consumable:e.target.checked||undefined})}/> 使い切り(消耗品)</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.unique||false} onChange={e=>ud({unique:e.target.checked||undefined})}/> 重複禁止</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer',minHeight:36}}><input type="checkbox" checked={t.locked||false} onChange={e=>ud({locked:e.target.checked||undefined})}/> 取り外し不可</label>
+      </div>
+      {/* ダメージボーナス */}
+      <div style={{...lbl}}>ダメージボーナス ({(t.bonus||[]).length})</div>
+      {(t.bonus||[]).map((b,bi)=>{const ubf=(patch)=>{const bs=[...(t.bonus||[])];bs[bi]={...bs[bi],...patch};ud({bonus:bs});};
+        return(<div key={bi} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:4,padding:6,marginBottom:4}}>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          <select value={b.source||''} onChange={e=>{const bs=[...(t.bonus||[])];if(e.target.value==='counter')bs[bi]={...b,source:'counter',counter:b.counter||'',mult:b.mult||1,value:undefined};else bs[bi]={...b,source:undefined,counter:undefined,mult:undefined,value:b.value||0};ud({bonus:bs});}} style={{...iSm,width:90}}>
+            <option value="">固定値</option><option value="counter">カウンター</option></select>
+          {b.source==='counter'?<>
+            <span style={{fontSize:11,color:'#94a3b8'}}>名:</span><select value={b.counter||''} onChange={e=>ubf({counter:e.target.value})} style={{...iSm,width:80}}>
+              <option value="">-</option>{(counterNames||[]).map(n=><option key={n} value={n}>{n}</option>)}</select>
+            <span style={{fontSize:11,color:'#94a3b8'}}>×</span><input type="number" value={b.mult||1} step={0.1} onChange={e=>ubf({mult:+e.target.value})} style={iNum}/>
+          </>:<>
+            <input type="number" value={b.value||0} onChange={e=>ubf({value:+e.target.value})} style={iNum}/>
+          </>}
+          <button onClick={()=>{const bs=[...(t.bonus||[])];bs.splice(bi,1);ud({bonus:bs.length?bs:undefined});}} style={{fontSize:11,padding:'2px 6px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>×</button>
+        </div>
+        {/* 条件 */}
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginTop:4}}>
+          <span style={{fontSize:10,color:'#475569'}}>条件:</span>
+          <select value={b.cond?(b.cond.counter!=null?'counter':b.cond.stat?'stat':b.cond.selfHpPct?'selfHpPct':b.cond.targetHpPct?'targetHpPct':b.cond.targetTrait?'targetTrait':b.cond.targetClass?'targetClass':b.cond.targetTag?'targetTag':''):''} onChange={e=>{
+            const v=e.target.value;
+            if(!v)ubf({cond:undefined});
+            else if(v==='counter')ubf({cond:{counter:'',min:1}});
+            else if(v==='stat')ubf({cond:{stat:'str',op:'>=',val:0}});
+            else if(v==='targetTrait')ubf({cond:{targetTrait:''}});
+            else if(v==='targetClass')ubf({cond:{targetClass:''}});
+            else if(v==='targetTag')ubf({cond:{targetTag:''}});
+            else if(v==='selfHpPct')ubf({cond:{selfHpPct:'<=50'}});
+            else if(v==='targetHpPct')ubf({cond:{targetHpPct:'<=50'}});
+          }} style={{...iSm,width:100,fontSize:10}}>
+            <option value="">なし</option>
+            <option value="counter">カウンター</option>
+            <option value="stat">自ステータス</option>
+            <option value="selfHpPct">自HP%</option>
+            <option value="targetHpPct">対象HP%</option>
+            <option value="targetTrait">対象特性</option>
+            <option value="targetClass">対象クラス</option>
+            <option value="targetTag">対象タグ</option>
+          </select>
+          {b.cond?.counter!=null&&<>
+            <select value={b.cond.counter||''} onChange={e=>ubf({cond:{...b.cond,counter:e.target.value}})} style={{...iSm,width:70,fontSize:10}}>
+              <option value="">-</option>{(counterNames||[]).map(n=><option key={n} value={n}>{n}</option>)}</select>
+            <span style={{fontSize:10,color:'#94a3b8'}}>≥</span>
+            <input type="number" value={b.cond.min||0} min={0} onChange={e=>ubf({cond:{...b.cond,min:+e.target.value}})} style={{...iNum,width:40,fontSize:10}}/>
+          </>}
+          {b.cond?.stat&&<>
+            <select value={b.cond.stat} onChange={e=>ubf({cond:{...b.cond,stat:e.target.value}})} style={{...iSm,width:60,fontSize:10}}>
+              {STATS.map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
+            <select value={b.cond.op||'>='} onChange={e=>ubf({cond:{...b.cond,op:e.target.value}})} style={{...iSm,width:45,fontSize:10}}>
+              <option value=">=">≥</option><option value="<=">≤</option><option value=">">＞</option><option value="<">＜</option><option value="==">＝</option></select>
+            <input type="number" value={b.cond.val||0} onChange={e=>ubf({cond:{...b.cond,val:+e.target.value}})} style={{...iNum,width:45,fontSize:10}}/>
+          </>}
+          {b.cond?.targetTrait!=null&&<input value={b.cond.targetTrait} placeholder="特性名" onChange={e=>ubf({cond:{...b.cond,targetTrait:e.target.value}})} style={{...iSm,width:80,fontSize:10}}/>}
+          {b.cond?.targetClass!=null&&<input value={b.cond.targetClass} placeholder="クラス名" onChange={e=>ubf({cond:{...b.cond,targetClass:e.target.value}})} style={{...iSm,width:80,fontSize:10}}/>}
+          {b.cond?.targetTag!=null&&<input value={b.cond.targetTag} placeholder="タグ名" onChange={e=>ubf({cond:{...b.cond,targetTag:e.target.value}})} style={{...iSm,width:80,fontSize:10}}/>}
+          {b.cond?.selfHpPct!=null&&<input value={b.cond.selfHpPct||''} placeholder="<=50" onChange={e=>ubf({cond:{...b.cond,selfHpPct:e.target.value}})} style={{...iSm,width:60,fontSize:10}}/>}
+          {b.cond?.targetHpPct!=null&&<input value={b.cond.targetHpPct||''} placeholder="<=50" onChange={e=>ubf({cond:{...b.cond,targetHpPct:e.target.value}})} style={{...iSm,width:60,fontSize:10}}/>}
+        </div>
+      </div>);})}
+      <button onClick={()=>ud({bonus:[...(t.bonus||[]),{value:0}]})} style={{fontSize:11,padding:'4px 10px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',marginTop:2}}>+ ボーナス追加</button>
+    </div>
+
+    {/* Range */}
+    {(t.type!=='buff'||!t.selfOnly)&&<div style={crd}>
+      <div style={{...lbl,marginTop:0}}>射程</div>
+      <div style={{...rowS,flexWrap:'wrap'}}>
+        <select value={t.rangeType||'fixed'} onChange={e=>{if(e.target.value==='fixed')ud({rangeType:undefined,rangeDivisor:undefined});else ud({rangeType:'intDiv',rangeDivisor:t.rangeDivisor||3,rangeMin:undefined,rangeMax:undefined});}} style={{...iSm,width:110}}>
+          <option value="fixed">固定射程</option><option value="intDiv">INT÷N</option></select>
+        {!t.rangeType&&(<><input type="number" value={t.rangeMin??1} min={0} onChange={e=>ud({rangeMin:+e.target.value})} style={iNum}/><span style={{color:'#64748b'}}>〜</span><input type="number" value={t.rangeMax??1} min={0} onChange={e=>ud({rangeMax:+e.target.value})} style={iNum}/></>)}
+        {t.rangeType==='intDiv'&&(<><span style={{fontSize:12,color:'#94a3b8'}}>INT÷</span><input type="number" value={t.rangeDivisor||3} min={1} onChange={e=>ud({rangeDivisor:+e.target.value})} style={iNum}/></>)}
+      </div>
+      <div style={lbl}>回数</div>
+      <input type="number" value={t.maxUses||1} min={1} onChange={e=>ud({maxUses:+e.target.value})} style={iNum}/>
+      <div style={lbl}>AoE</div>
+      <select value={t.aoe||0} onChange={e=>ud({aoe:e.target.value||undefined})} style={{...iSm,width:180}}>
+        <option value="">なし</option><option value="dir_line">前方直線</option><option value="dir_cross">十字</option><option value="adj_heal">隣接回復</option><option value="self_area">自己中心</option></select>
+      {t.aoe==='self_area'&&(<><div style={lbl}>AoE範囲</div><input value={t.aoeRange||0} onChange={e=>ud({aoeRange:e.target.value||undefined})} style={iSm} placeholder="intHalf"/></>)}
+    </div>}
+
+    {/* HitRate */}
+    <div style={crd}>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <span style={{...lbl,marginTop:0,marginBottom:0}}>命中率</span>
+        {t.hitRate==null
+          ?<button onClick={()=>ud({hitRate:80})} style={{fontSize:11,padding:'4px 10px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer'}}>追加</button>
+          :<><input type="number" value={t.hitRate} min={0} max={100} onChange={e=>ud({hitRate:+e.target.value})} style={{...iNum,width:55}}/>
+            <span style={{fontSize:10,color:'#475569'}}>% ± INT差×5</span>
+            <button onClick={()=>ud({hitRate:undefined})} style={{fontSize:11,padding:'4px 10px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button></>}
+      </div>
+    </div>
+
+    {/* Condition */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>使用条件</div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['stat','stat2'].map((sk,si)=>(<div key={sk} style={{display:'flex',alignItems:'center',gap:4}}>
+        <select value={t.cond?.[sk]||0} onChange={e=>{const v=e.target.value;if(!v){const c={...(t.cond||{})};delete c[sk];delete c[si===0?'val':'val2'];ud({cond:Object.keys(c).length?c:undefined});}else udc({[sk]:v});}} style={{...iSm,width:70}}><option value="">-</option>{STATS.map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
+        {t.cond?.[sk]&&<input type="number" value={t.cond?.[si===0?'val':'val2']||0} onChange={e=>udc({[si===0?'val':'val2']:+e.target.value})} style={{...iNum,width:55}}/>}
+      </div>))}</div>
+      <div style={{display:'flex',gap:6,alignItems:'center',marginTop:8}}>
+        <span style={{fontSize:11,color:'#64748b'}}>カウンター:</span>
+        <input value={t.cond?.counter||0} onChange={e=>{if(!e.target.value){const c={...(t.cond||{})};delete c.counter;delete c.cost;ud({cond:Object.keys(c).length?c:undefined});}else udc({counter:e.target.value});}} style={{...iSm,width:80}} placeholder="名前"/>
+        {t.cond?.counter&&(<><span style={{fontSize:11,color:'#64748b'}}>消費:</span><input type="number" value={t.cond?.cost||0} min={0} onChange={e=>udc({cost:+e.target.value})} style={{...iNum,width:50}}/></>)}
+      </div>
+    </div>
+
+    {/* Counter Cost (技使用時にカウンター消費) */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span>カウンター消費 (counterCost)</span>
+        {!t.counterCost?<button onClick={()=>ud({counterCost:{name:'',cost:1}})} style={{fontSize:11,padding:'4px 10px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer'}}>追加</button>
+        :<button onClick={()=>ud({counterCost:undefined})} style={{fontSize:11,padding:'4px 10px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button>}
+      </div>
+      {t.counterCost&&(<div style={rowS}>
+        <span style={{fontSize:11,color:'#64748b'}}>名前:</span>
+        <input value={t.counterCost.name||0} onChange={e=>ud({counterCost:{...t.counterCost,name:e.target.value}})} style={{...iSm,width:100}} placeholder="カウンター名"/>
+        <span style={{fontSize:11,color:'#64748b'}}>消費:</span>
+        <input type="number" value={t.counterCost.cost||1} min={1} onChange={e=>ud({counterCost:{...t.counterCost,cost:+e.target.value}})} style={{...iNum,width:50}}/>
+      </div>)}
+      {t.counterCost&&<div style={{fontSize:10,color:'#475569',marginTop:4}}>技使用時に指定カウンターを消費する。不足時は使用不可</div>}
+    </div>
+
+    {/* debuffOnDamage（onCombat counterGen使用時） */}
+    {(t.effects||[]).some(e=>e.trigger==='onCombat'&&e.type==='counterGen')&&(
+    <div style={crd}>
+      <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={t.debuffOnDamage||false} onChange={e=>ud({debuffOnDamage:e.target.checked||undefined})}/> ダメージ時のみ付与（debuffOnDamage）</label>
+    </div>
+    )}
+
+    {/* Desc */}
+    <div style={crd}><div style={{...lbl,marginTop:0}}>説明文</div><input value={t.desc||0} onChange={e=>ud({desc:e.target.value})} style={iS}/></div>
+
+    {/* Tech Effects */}
+    <div style={crd}>
+      <div style={{fontSize:11,color:'#f59e0b',marginBottom:6}}>技エフェクト — この技の使用・所持中に発動</div>
+      <EffectsPanel effects={t.effects||[]} onChange={fx=>ud({effects:fx.length?fx:undefined})} triggerOpts={TECH_EF_TR} triggerMap={TECH_EF_TR_MAP} counterNames={counterNames}/>
+    </div>
+
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(t,null,2)}</pre></details>
+
+    {/* Save bar */}
+    {dirty&&<div className="save-bar">
+      <button onClick={saveDraft} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button>
+      <button onClick={discardDraft} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button>
+    </div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>技を選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ════════════════════════════════
+// ═══ Skill Editor ═══
+// ════════════════════════════════
+function SkillEditor({parts,setParts,counterNames}){
+  const [sel,setSel]=useState(null);
+  const [draft,setDraft]=useState(null);
+  const [dirty,setDirty]=useState(false);
+  const [flt,setFlt]=useState('');const [gFlt,setGFlt]=useState('');
+  const skills=useMemo(()=>parts.filter(p=>p.type==='skill'&&'id' in p),[parts]);
+  const filtered=useMemo(()=>skills.filter(s=>{if(flt&&!s.name.includes(flt))return false;if(gFlt&&s.tag!==gFlt)return false;return true;}),[skills,flt,gFlt]);
+
+  function selectSk(id){
+    const p=parts.find(x=>x.id===id);setSel(id);setDraft(p?JSON.parse(JSON.stringify(p)):null);setDirty(false);}
+  function uds(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function saveSk(){if(sel==null||!draft)return;setParts(p=>p.map(x=>x.id===sel?draft:x));setDirty(false);}
+  function discardSk(){if(sel==null)return;const p=parts.find(x=>x.id===sel);setDraft(p?JSON.parse(JSON.stringify(p)):null);setDirty(false);}
+  function ue(ei,u){setDraft(p=>{const fx=[...(p.effects||[])];fx[ei]={...fx[ei],...u};return{...p,effects:fx};});setDirty(true);}
+  function addFx(){setDraft(p=>({...p,effects:[...(p.effects||[]),{trigger:'always',scope:'self',type:'statMod',mods:{}}]}));setDirty(true);}
+  function rmFx(ei){setDraft(p=>({...p,effects:(p.effects||[]).filter((_,j)=>j!==ei)}));setDirty(true);}
+  function mvSk(id,dir){const idx=parts.findIndex(p=>p.id===id);if(idx<0)return;let t=-1;
+    if(dir<0){for(let i=idx-1;i>=0;i--){if(parts[i].type==='skill'&&'id' in parts[i]){t=i;break;}}}
+    else{for(let i=idx+1;i<parts.length;i++){if(parts[i].type==='skill'&&'id' in parts[i]){t=i;break;}}}
+    if(t<0)return;setParts(p=>{const n=[...p];[n[idx],n[t]]=[n[t],n[idx]];return n;});}
+  function addSk(){const mx=Math.max(0,...parts.filter(p=>'id' in p).map(p=>p.id||0));const s={id:mx+1,name:'新規スキル',type:'skill',tag:'fire',rarity:'C',desc:'',effects:[]};setParts(p=>[...p,s]);selectSk(s.id);}
+  function dupSk(id){
+    const src=parts.find(p=>p.id===id);if(!src)return;
+    const mx=Math.max(0,...parts.filter(p=>'id' in p).map(p=>p.id||0));
+    const cp={...JSON.parse(JSON.stringify(src)),id:mx+1,name:src.name+'_copy'};
+    const idx=parts.findIndex(p=>p.id===id);
+    setParts(p=>{const n=[...p];n.splice(idx+1,0,cp);return n;});selectSk(cp.id);
+  }
+  function sortSkByTag(){
+    setParts(prev=>{
+      const sk=prev.filter(p=>p.type==='skill'&&'id' in p);
+      const rest=prev.filter(p=>!(p.type==='skill'&&'id' in p));
+      sk.sort((a,b)=>{const ta=TAG_ORDER.indexOf(a.tag||'');const tb=TAG_ORDER.indexOf(b.tag||'');const ia=ta<0?99:ta;const ib=tb<0?99:tb;return ia-ib;});
+      return [...rest,...sk];
+    });
+  }
+  function delSk(){if(sel==null||!confirm(`"${draft?.name}"を削除?`))return;setParts(p=>p.filter(x=>x.id!==sel));setSel(null);setDraft(null);setDirty(false);}
+  function reorderSk(fi,ti){const fid=filtered[fi]?.id,tid=filtered[ti]?.id;if(!fid||!tid)return;const a=parts.findIndex(p=>p.id===fid),b=parts.findIndex(p=>p.id===tid);if(a<0||b<0)return;setParts(p=>{const n=[...p];const [item]=n.splice(a,1);n.splice(b,0,item);return n;});}
+
+  const sk=draft;
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{padding:12,borderBottom:'1px solid #334155',display:'flex',flexDirection:'column',gap:6}}>
+      <input value={flt} onChange={e=>setFlt(e.target.value)} placeholder="🔍 検索" style={{...iS,fontSize:13}}/>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}</button>)}
+        <span style={{marginLeft:'auto',fontSize:11,color:'#475569',alignSelf:'center'}}>{filtered.length}/{skills.length}</span>
+      </div>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {filtered.map((s,i)=>{const tg=TAGS.find(x=>x.id===s.tag);return(
+        <ListItem key={s.id} selected={sel===s.id} onClick={()=>selectSk(s.id)} onUp={()=>mvSk(s.id,-1)} onDown={()=>mvSk(s.id,1)} onDup={()=>dupSk(s.id)} onDel={()=>{if(!confirm(`"${s.name}"を削除?`))return;setParts(p=>p.filter(x=>x.id!==s.id));if(sel===s.id){setSel(null);setDraft(null);setDirty(false);}}} first={i===0} last={i===filtered.length-1} idx={i} onReorder={reorderSk}>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            {tg&&<span style={{fontSize:10,padding:'2px 5px',borderRadius:4,color:tg.c,background:tg.c+'20',fontWeight:700}}>{tg.l}</span>}
+            <span style={{fontSize:10,padding:'2px 5px',borderRadius:4,color:RAR.find(r=>r.id===s.rarity)?.c||'#94a3b8',background:'#334155'}}>{s.rarity}</span>
+            <span style={{fontSize:13,fontWeight:600}}>{s.name}</span>
+            {s.id===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+            <span style={{fontSize:9,color:'#475569',marginLeft:'auto'}}>{(s.effects||[]).length}fx</span>
+          </div>
+          {s.desc&&<div style={{fontSize:11,color:'#64748b',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.desc}</div>}
+        </ListItem>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155',display:'flex',gap:6}}>
+      <button onClick={addSk} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>+ スキル追加</button>
+      <button onClick={sortSkByTag} style={{...btnP,background:'#334155',color:'#94a3b8'}} title="火→水→風→光→闇→他">タグ順</button>
+    </div>
+  </div>);
+
+  const detV=sk?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+      <span style={{fontSize:10,color:'#475569'}}>#{sk.id}</span><h2 style={{fontSize:18,fontWeight:700,flex:1}}>{sk.name}</h2>
+      <button onClick={delSk} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>名前</div><input value={sk.name} onChange={e=>uds({name:e.target.value})} style={iS}/>
+      <div style={lbl}>タグ</div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{TAGS.map(x=><button key={x.id} onClick={()=>uds({tag:x.id})} style={chip(sk.tag===x.id,x.c)}>{x.l}</button>)}</div>
+      <div style={lbl}>レアリティ</div><div style={{display:'flex',gap:4}}>{RAR.map(x=><button key={x.id} onClick={()=>uds({rarity:x.id})} style={chip(sk.rarity===x.id,x.c)}>{x.l}</button>)}</div>
+      <div style={lbl}>説明文</div><input value={sk.desc||0} onChange={e=>uds({desc:e.target.value})} style={iS}/>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}}>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={sk.noSlot||false} onChange={e=>uds({noSlot:e.target.checked||undefined})}/> スロット非消費</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={sk.stealth||false} onChange={e=>uds({stealth:e.target.checked||undefined})}/> ステルス(UI非表示)</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={sk.unique||false} onChange={e=>uds({unique:e.target.checked||undefined})}/> 重複禁止</label>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={sk.locked||false} onChange={e=>uds({locked:e.target.checked||undefined})}/> 取り外し不可</label>
+      </div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span>エフェクト ({(sk.effects||[]).length})</span>
+        <button onClick={addFx} style={{fontSize:12,padding:'6px 12px',background:'#3b82f6',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',minHeight:36}}>+ 追加</button></div>
+      {(sk.effects||[]).map((fx,ei)=>(<div key={ei} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,marginBottom:8}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>[{ei+1}]{fx.cond&&<span style={{color:'#f59e0b',marginLeft:4}}>⚡</span>}</span>
+          <button onClick={()=>rmFx(ei)} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button></div>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+          {[['trigger',EF_TR,EF_TR_MAP],['scope',EF_SC,EF_SC_MAP],['type',EF_TY,EF_TY_MAP]].map(([f,opts,map])=>(<div key={f} style={{flex:1,minWidth:110}}>
+            <div style={{fontSize:10,color:'#475569',marginBottom:2}}>{f==='trigger'?'発動条件':f==='scope'?'対象':'効果タイプ'}</div>
+            <select value={fx[f]||0} onChange={e=>ue(ei,{[f]:e.target.value})} style={{...iSm,width:'100%'}}>
+              {opts.map(o=><option key={o} value={o}>{map[o]} ({o})</option>)}
+            </select>
+          </div>))}</div>
+        <CondEditor cond={fx.cond} onChange={c=>{const fxn=[...(sk.effects||[])];if(c)fxn[ei]={...fxn[ei],cond:c};else{const{cond,...rest}=fxn[ei];fxn[ei]=rest;}setDraft(p=>({...p,effects:fxn}));setDirty(true);}}/>
+        <div style={{fontSize:10,color:'#475569',marginBottom:2,marginTop:8}}>パラメータ (JSON)</div>
+        <textarea value={JSON.stringify(Object.fromEntries(Object.entries(fx).filter(([k])=>!['trigger','scope','type','cond'].includes(k))),null,2)}
+          onChange={e=>{try{const p=JSON.parse(e.target.value);const base={trigger:fx.trigger,scope:fx.scope,type:fx.type,...p};if(fx.cond)base.cond=fx.cond;ue(ei,base);}catch{}}}
+          style={{...iS,minHeight:100,fontFamily:'monospace',fontSize:12}} rows={6}/>
+      </div>))}
+      {(sk.effects||[]).length===0&&<div style={{fontSize:12,color:'#475569',textAlign:'center',padding:12}}>エフェクトなし</div>}
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(sk,null,2)}</pre></details>
+    {dirty&&<div className="save-bar">
+      <button onClick={saveSk} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button>
+      <button onClick={discardSk} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button>
+    </div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>スキルを選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Draft Parts Tab ═══
+const DRAFT_TARGETS={fire:{C:9,U:7,R:4},water:{C:9,U:7,R:4},wind:{C:9,U:7,R:4},light:{C:4,U:2,R:1},dark:{C:2,U:3,R:1},none:{}};
+function DraftEditor({parts,setParts,techs,setTechs,counterNames}){
+  const [flt,setFlt]=useState('');const [gFlt,setGFlt]=useState('');const [rFlt,setRFlt]=useState('');const [tFlt,setTFlt]=useState('');
+  const [showRegister,setShowRegister]=useState(false);
+  const [dragOverId,setDragOverId]=useState(null);
+  const dragIdRef=useRef(null);
+  const rp=useMemo(()=>parts.filter(p=>'id' in p),[parts]);
+  const fd=useMemo(()=>rp.filter(p=>{
+    if(flt&&!p.name.includes(flt))return false;
+    if(gFlt&&p.tag!==gFlt)return false;
+    if(rFlt&&p.rarity!==rFlt)return false;
+    if(tFlt&&p.type!==tFlt)return false;
+    return true;
+  }),[rp,flt,gFlt,rFlt,tFlt]);
+  const cnt=useMemo(()=>{const c={};for(const p of rp){const k=`${p.tag||'?'}_${p.rarity||'?'}`;c[k]=(c[k]||0)+1;c[p.tag||'?']=(c[p.tag||'?']||0)+1;
+    const kt=`${p.tag||'?'}_${p.type}`;c[kt]=(c[kt]||0)+1;}return c;},[rp]);
+
+  // 未登録技リスト
+  const registeredRefs=useMemo(()=>new Set(rp.filter(p=>p.type==='tech').map(p=>p.techRef||p.name)),[rp]);
+  const unregisteredTechs=useMemo(()=>Object.keys(techs).filter(k=>!k.startsWith('_')&&!registeredRefs.has(k)),[techs,registeredRefs]);
+
+  // パーツのtag/rarity変更 → parts更新 + techs同期
+  function updatePart(id,u){
+    setParts(prev=>prev.map(p=>p.id===id?{...p,...u}:p));
+    // 技パーツならtechsにも同期
+    const part=rp.find(p=>p.id===id);
+    if(part?.type==='tech'){
+      const ref=part.techRef||part.name;
+      if(techs[ref]){
+        setTechs(prev=>({...prev,[ref]:{...prev[ref],...(u.tag!=null?{tag:u.tag}:{}),...(u.rarity!=null?{rarity:u.rarity}:{})}}));
+      }
+    }
+  }
+  // 技パーツ登録
+  function registerTech(techName){
+    const mx=Math.max(0,...parts.filter(p=>'id' in p).map(p=>p.id||0));
+    const t=techs[techName]||{};
+    setParts(prev=>[...prev,{id:mx+1,name:techName,type:'tech',techRef:techName,tag:t.tag||'fire',rarity:t.rarity||'C'}]);
+  }
+  // パーツ削除
+  function removePart(id){
+    const p=rp.find(x=>x.id===id);
+    if(!p||!confirm(`パーツ「${p.name}」を抽選から除外?`))return;
+    setParts(prev=>prev.filter(x=>x.id!==id));
+  }
+  // D&D並び替え
+  function reorderParts(fromId,toId){
+    if(fromId===toId)return;
+    setParts(prev=>{
+      const n=[...prev];
+      const fi=n.findIndex(p=>p.id===fromId);
+      const ti=n.findIndex(p=>p.id===toId);
+      if(fi<0||ti<0)return prev;
+      const [item]=n.splice(fi,1);
+      n.splice(ti,0,item);
+      return n;
+    });
+  }
+
+  function techSummary(p){
+    const ref=p.techRef||p.name;const t=techs[ref];if(!t)return ref;
+    const tt=TT.find(x=>x.id===t.type);
+    const s=[];
+    s.push(tt?.s||'?');
+    if(t.type==='mult')s.push(`×${t.mult}`);
+    if(t.type==='flatAdd'&&t.mod)s.push(`+${t.mod}`);
+    if(t.type==='fixed')s.push(`${t.fixed}固`);
+    if(t.type==='intRef')s.push(`I×${t.intMult||1}`);
+    if(t.type==='heal')s.push(`I×${t.healMult||1}回`);
+    if(t.type==='buff'||t.type==='selfBuff')s.push(Object.entries(t.buff||{}).map(([k,v])=>`${k.toUpperCase()}${v>0?'+':''}${v}`).join('/'));
+    if(t.type==='buff'&&t.selfOnly)s.push('自己');
+    if(t.type==='special')s.push(t.subType||'');
+    if(t.rangeType==='intDiv')s.push(`射INT÷${t.rangeDivisor}`);
+    else s.push(`射${t.rangeMin}-${t.rangeMax}`);
+    s.push(`${t.maxUses}回`);
+    if(t.hits>1)s.push(`${t.hits}hit`);
+    if(t.aoe)s.push(t.aoe);
+    if(t.push)s.push(`押${t.push}`);
+    // onCombat counterGenからカウンター名を表示
+    for(const e of(t.effects||[])){if(e.trigger==='onCombat'&&e.type==='counterGen')s.push(e.counter);}
+    const otherFx=(t.effects||[]).filter(e=>!(e.trigger==='onCombat'&&e.type==='counterGen'));
+    if(otherFx.length>0)s.push(`${otherFx.length}fx`);
+    return s.join(' ');
+  }
+  function skillSummary(p){
+    if(!p.effects||!p.effects.length)return p.desc||'';
+    return p.effects.map(e=>{
+      const t=EF_TY_MAP[e.type]||e.type;const tr=EF_TR_MAP[e.trigger]||e.trigger;const sc=EF_SC_MAP[e.scope]||'';
+      let detail='';
+      if(e.type==='statMod'&&e.mods)detail=Object.entries(e.mods).map(([k,v])=>`${k.toUpperCase()}${v>0?'+':''}${v}`).join('/');
+      if(e.type==='heal')detail=`${e.value||0}`;
+      if(e.type==='fixedDmg')detail=`${e.value||0}`;
+      if(e.type==='dmgReduce')detail=`-${e.value||0}`;
+      if(e.type==='counterGen')detail=`${e.counter}+${e.amount}`;
+      if(e.type==='debuffHitBonus')detail=`+${e.value}%`;
+      if(e.type==='applyDebuff')detail=e.debuff?.name||'';
+      if(e.type==='grantTech')detail=e.tech||'';
+      if(e.type==='dotDamage')detail=`${e.value}/T`;
+      if(e.type==='pursuitMod')detail=`+${e.value}%`;
+      const cond=e.cond?'⚡':'';
+      return `[${tr}${sc?' '+sc:''}] ${t}${detail?' '+detail:''}${cond}`;
+    }).join(' / ');
+  }
+
+  // パーツ項目の右クリックメニュー
+  const [ctx,setCtx]=useState(null);
+  function openCtx(e,p){
+    e.preventDefault();
+    setCtx({x:Math.min(e.clientX,window.innerWidth-160),y:Math.min(e.clientY,window.innerHeight-120),part:p});
+  }
+
+  return(<div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
+    <div style={{padding:12,borderBottom:'1px solid #334155',display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
+      <input value={flt} onChange={e=>setFlt(e.target.value)} placeholder="🔍 検索" style={{...iS,fontSize:13}}/>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全({rp.length})</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}{cnt[x.id]||0}</button>)}
+      </div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setRFlt('')} style={chip(!rFlt,'#e2e8f0')}>全R</button>
+        {RAR.map(x=><button key={x.id} onClick={()=>setRFlt(x.id===rFlt?'':x.id)} style={chip(rFlt===x.id,x.c)}>{x.l}</button>)}
+        <span style={{margin:'0 8px',color:'#334155'}}>|</span>
+        <button onClick={()=>setTFlt('')} style={chip(!tFlt,'#e2e8f0')}>全種</button>
+        <button onClick={()=>setTFlt(tFlt==='tech'?'':'tech')} style={chip(tFlt==='tech','#94a3b8')}>技</button>
+        <button onClick={()=>setTFlt(tFlt==='skill'?'':'skill')} style={chip(tFlt==='skill','#60a5fa')}>スキル</button>
+        <span style={{marginLeft:'auto',fontSize:11,color:'#475569',alignSelf:'center'}}>{fd.length}件</span>
+      </div>
+    </div>
+    {/* クロス集計 */}
+    <div style={{padding:12,borderBottom:'1px solid #334155',flexShrink:0}}>
+      <table style={{width:'100%',fontSize:11,color:'#94a3b8',borderCollapse:'collapse'}}>
+        <thead><tr style={{borderBottom:'1px solid #334155'}}><th style={{textAlign:'left',padding:4}}>タグ</th>
+          {RAR.map(r=><th key={r.id} style={{textAlign:'center',padding:4,color:r.c}}>{r.l}</th>)}
+          <th style={{textAlign:'center',padding:4}}>計</th>
+          <th style={{textAlign:'center',padding:4,color:'#475569'}}>技/ス</th>
+        </tr></thead>
+        <tbody>{TAGS.map(x=>{const tgt=DRAFT_TARGETS[x.id]||{};const row=RAR.map(r=>{const v=cnt[`${x.id}_${r.id}`]||0;const g=tgt[r.id];return{v,g};});
+          return<tr key={x.id}><td style={{padding:4,color:x.c}}>{x.l}</td>
+            {row.map((r,i)=><td key={i} style={{textAlign:'center',padding:4,color:r.g!=null&&r.v!==r.g?'#f59e0b':undefined}}>{r.v}{r.g!=null?<span style={{color:'#475569'}}>/{r.g}</span>:null}</td>)}
+            <td style={{textAlign:'center',padding:4,fontWeight:700}}>{cnt[x.id]||0}{tgt.C!=null?<span style={{color:'#475569'}}>/{(tgt.C||0)+(tgt.U||0)+(tgt.R||0)}</span>:null}</td>
+            <td style={{textAlign:'center',padding:4,fontSize:10,color:'#64748b'}}>{cnt[`${x.id}_tech`]||0}/{cnt[`${x.id}_skill`]||0}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6}}>
+        <span style={{fontSize:10,color:'#475569'}}>排出: C{65}% / U{28}% / R{7}%　タグ重み: 得A{38}% / 得B{38}% / 苦手{12}% / 光闇無{12}%</span>
+        {unregisteredTechs.length>0&&<button onClick={()=>setShowRegister(!showRegister)} style={{marginLeft:'auto',fontSize:11,padding:'4px 10px',background:showRegister?'#f59e0b30':'#334155',color:showRegister?'#f59e0b':'#94a3b8',border:showRegister?'1px solid #f59e0b':'1px solid #334155',borderRadius:4,cursor:'pointer'}}>未登録技 {unregisteredTechs.length}</button>}
+      </div>
+    </div>
+    {/* 未登録技パネル */}
+    {showRegister&&<div style={{padding:8,borderBottom:'1px solid #334155',maxHeight:200,overflowY:'auto',background:'#0f172a',flexShrink:0}}>
+      <div style={{fontSize:10,color:'#f59e0b',marginBottom:4}}>以下の技はtechs.jsonにあるがpartsに未登録:</div>
+      {unregisteredTechs.map(n=>{const t=techs[n];return(<div key={n} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 8px',marginBottom:2,borderRadius:4,background:'#1e293b'}}>
+        <span style={{fontSize:12,fontWeight:600,flex:1}}>{n}</span>
+        <span style={{fontSize:10,color:'#64748b'}}>{t.tag||'?'}/{t.rarity||'?'}</span>
+        <button onClick={()=>registerTech(n)} style={{fontSize:11,padding:'3px 8px',background:'#22c55e20',color:'#22c55e',border:'1px solid #22c55e',borderRadius:4,cursor:'pointer'}}>+ 登録</button>
+      </div>);})}
+    </div>}
+    {/* パーツ一覧 */}
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {fd.map(p=>{const tg=TAGS.find(x=>x.id===p.tag);const isT=p.type==='tech';const isOver=dragOverId===p.id;
+        return(<div key={p.id} onContextMenu={e=>openCtx(e,p)}
+          draggable onDragStart={()=>{dragIdRef.current=p.id;}}
+          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';setDragOverId(p.id);}}
+          onDragLeave={()=>setDragOverId(v=>v===p.id?null:v)}
+          onDrop={e=>{e.preventDefault();setDragOverId(null);if(dragIdRef.current!=null&&dragIdRef.current!==p.id)reorderParts(dragIdRef.current,p.id);dragIdRef.current=null;}}
+          onDragEnd={()=>{dragIdRef.current=null;setDragOverId(null);}}
+          style={{padding:'8px 12px',marginBottom:2,borderRadius:6,cursor:'grab',background:isOver?'rgba(59,130,246,0.25)':'#1e293b',border:isOver?'1px solid rgba(59,130,246,0.7)':'1px solid #334155',transition:'background 0.1s'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <span style={{fontSize:10,padding:'2px 5px',borderRadius:4,background:isT?'#334155':'#1e3a5f',color:isT?'#94a3b8':'#60a5fa',fontWeight:600}}>{isT?'技':'ス'}</span>
+            {TAGS.map(x=><span key={x.id} onClick={e=>{e.stopPropagation();updatePart(p.id,{tag:x.id});}} style={{fontSize:10,padding:'2px 5px',borderRadius:4,cursor:'pointer',color:p.tag===x.id?x.c:'#334155',background:p.tag===x.id?x.c+'20':'transparent',fontWeight:700,opacity:p.tag===x.id?1:0.3}}>{x.l}</span>)}
+            {RAR.map(x=><span key={x.id} onClick={e=>{e.stopPropagation();updatePart(p.id,{rarity:x.id});}} style={{fontSize:10,padding:'2px 5px',borderRadius:4,cursor:'pointer',color:p.rarity===x.id?x.c:'#475569',background:p.rarity===x.id?'#334155':'transparent',fontWeight:p.rarity===x.id?700:400,opacity:p.rarity===x.id?1:0.3}}>{x.l}</span>)}
+            <span style={{fontSize:13,fontWeight:600,marginLeft:4}}>{p.name}</span>
+            <span style={{fontSize:9,color:'#475569'}}>#{p.id}</span>
+          </div>
+          <div style={{fontSize:11,color:'#94a3b8',marginTop:3,fontFamily:'monospace',lineHeight:1.4}}>
+            {isT?techSummary(p):skillSummary(p)}
+          </div>
+          {p.desc&&!isT&&<div style={{fontSize:10,color:'#475569',marginTop:1}}>{p.desc}</div>}
+        </div>);})}
+    </div>
+    {/* コンテキストメニュー */}
+    {ctx&&<>
+      <div onClick={()=>setCtx(null)} style={{position:'fixed',inset:0,zIndex:998}}/>
+      <div style={{position:'fixed',left:ctx.x,top:ctx.y,zIndex:999,background:'#1e293b',border:'1px solid #475569',borderRadius:8,padding:4,minWidth:130,boxShadow:'0 8px 24px rgba(0,0,0,0.5)'}}>
+        <button onClick={()=>{setCtx(null);removePart(ctx.part.id);}} style={{display:'block',width:'100%',padding:'8px 12px',fontSize:12,color:'#fca5a5',background:'transparent',border:'none',cursor:'pointer',textAlign:'left',borderRadius:4}} onMouseEnter={e=>e.target.style.background='#334155'} onMouseLeave={e=>e.target.style.background='transparent'}>✕ 抽選から除外</button>
+      </div>
+    </>}
+  </div>);
+}
+
+// ═══ Terrain Editor ═══
+const PASS_TYPES=[{id:'passable',l:'全員通行可',c:'#22c55e'},{id:'flyOnly',l:'飛行のみ',c:'#f59e0b'},{id:'impassable',l:'通行不可',c:'#ef4444'}];
+const TERRAIN_FX=[{id:'damage',l:'ダメージ'},{id:'heal',l:'回復'},{id:'healPct',l:'HP%回復'},{id:'counter',l:'カウンター付与'},{id:'statBuff',l:'ステバフ'},{id:'statDebuff',l:'ステデバフ'},{id:'debuff',l:'デバフ付与'}];
+function TerrainEditor({terrains,setTerrains,counterNames}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  function select(i){setSel(i);setDraft(i!=null?JSON.parse(JSON.stringify(terrains[i])):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udm(s,v){setDraft(p=>({...p,mods:{...(p.mods||{}),[s]:v}}));setDirty(true);}
+  function save(){if(sel==null||!draft)return;setTerrains(p=>{const n=[...p];n[sel]=draft;return n;});setDirty(false);}
+  function discard(){if(sel==null)return;setDraft(JSON.parse(JSON.stringify(terrains[sel])));setDirty(false);}
+  function add(){const mx=Math.max(-1,...terrains.map(t=>t.id));setTerrains(p=>[...p,{id:mx+1,name:'新地形',color:'#888888',mods:{},moveCost:1,pass:'passable'}]);select(terrains.length);}
+  function del(){if(sel==null||!confirm(`"${draft?.name}"を削除?`))return;setTerrains(p=>p.filter((_,i)=>i!==sel));setSel(null);setDraft(null);setDirty(false);}
+  function addFx(){setDraft(p=>({...p,onStay:[...(p.onStay||[]),{type:'damage',value:5}]}));setDirty(true);}
+  function udFx(fi,u){setDraft(p=>{const fx=[...(p.onStay||[])];fx[fi]={...fx[fi],...u};return{...p,onStay:fx};});setDirty(true);}
+  function rmFx(fi){setDraft(p=>({...p,onStay:(p.onStay||[]).filter((_,j)=>j!==fi)}));setDirty(true);}
+  const t=draft;
+  // 旧impassable→pass互換
+  const getPass=(tr)=>tr.pass||(tr.impassable?'impassable':'passable');
+  function reorderTr(fi,ti){setTerrains(p=>{const n=[...p];const [item]=n.splice(fi,1);n.splice(ti,0,item);return n;});if(sel===fi)setSel(ti);else if(sel!=null&&sel>=Math.min(fi,ti)&&sel<=Math.max(fi,ti))setSel(sel+(fi<ti?-1:1));}
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {terrains.map((tr,i)=>{const ps=getPass(tr);const pt=PASS_TYPES.find(p=>p.id===ps);
+        return(<ListItem key={i} selected={sel===i} onClick={()=>select(i)} onUp={()=>{if(i>0)setTerrains(p=>{const n=[...p];[n[i-1],n[i]]=[n[i],n[i-1]];return n;});}} onDown={()=>{if(i<terrains.length-1)setTerrains(p=>{const n=[...p];[n[i],n[i+1]]=[n[i+1],n[i]];return n;});}} onDel={()=>{if(!confirm(`"${tr.name}"を削除?`))return;setTerrains(p=>p.filter((_,j)=>j!==i));if(sel===i){setSel(null);setDraft(null);setDirty(false);}}} first={i===0} last={i===terrains.length-1} idx={i} onReorder={reorderTr}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:20,height:20,borderRadius:4,background:tr.color,border:'1px solid #475569',flexShrink:0}}/>
+          <span style={{fontSize:13,fontWeight:600}}>{tr.name}</span>
+          <span style={{fontSize:10,color:'#475569'}}>#{tr.id}</span>
+          {ps!=='passable'&&<span style={{fontSize:9,color:pt?.c}}>{pt?.l}</span>}
+          {(tr.onStay||[]).length>0&&<span style={{fontSize:9,color:'#8b5cf6'}}>{tr.onStay.length}fx</span>}
+          {sel===i&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+        </div>
+      </ListItem>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ 地形追加</button></div>
+  </div>);
+  const detV=t?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{t.name}</h2>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>ID</div><input type="number" value={t.id} onChange={e=>ud({id:+e.target.value})} style={iNum}/>
+      <div style={lbl}>名前</div><input value={t.name} onChange={e=>ud({name:e.target.value})} style={iS}/>
+      <div style={lbl}>色</div><div style={{...rowS}}><input type="color" value={t.color} onChange={e=>ud({color:e.target.value})} style={{width:48,height:36,border:'1px solid #334155',borderRadius:4,cursor:'pointer'}}/><input value={t.color} onChange={e=>ud({color:e.target.value})} style={{...iSm,width:100}}/></div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>通行可否</div>
+      <div style={{display:'flex',gap:4}}>{PASS_TYPES.map(p=><button key={p.id} onClick={()=>ud({pass:p.id,impassable:undefined})} style={chip(getPass(t)===p.id,p.c)}>{p.l}</button>)}</div>
+      <div style={lbl}>移動コスト</div><input type="number" value={t.moveCost} min={1} onChange={e=>ud({moveCost:+e.target.value})} style={iNum}/>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>ステータス補正（待機中）</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['def','str','int'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:28}}>{s}</span>
+        <input type="number" value={t.mods?.[s]??t[s]??0} onChange={e=>{const v=+e.target.value;if(s==='def'&&!t.mods)ud({def:v,mods:{...(t.mods||{}),def:v}});else udm(s,v);}} style={iNum}/>
+      </div>))}</div>
+      <div style={{fontSize:10,color:'#475569',marginTop:2}}>このマスに待機中のユニットに適用される補正</div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span>地形効果 — ターン終了時 ({(t.onStay||[]).length})</span>
+        <button onClick={addFx} style={{fontSize:12,padding:'6px 12px',background:'#3b82f6',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',minHeight:32}}>+ 追加</button>
+      </div>
+      {(t.onStay||[]).map((fx,fi)=>(<div key={fi} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,marginBottom:8}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+          <select value={fx.type||'damage'} onChange={e=>udFx(fi,{type:e.target.value})} style={{...iSm,width:130}}>
+            {TERRAIN_FX.map(f=><option key={f.id} value={f.id}>{f.l}</option>)}
+          </select>
+          <button onClick={()=>rmFx(fi)} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button>
+        </div>
+        {(fx.type==='damage'||fx.type==='heal')&&(
+          <div style={rowS}><span style={{fontSize:10,color:'#64748b'}}>値:</span><input type="number" value={fx.value||0} onChange={e=>udFx(fi,{value:+e.target.value})} style={iNum}/></div>
+        )}
+        {fx.type==='healPct'&&(
+          <div style={rowS}><span style={{fontSize:10,color:'#64748b'}}>HP%:</span><input type="number" value={fx.value||10} min={1} max={100} onChange={e=>udFx(fi,{value:+e.target.value})} style={iNum}/></div>
+        )}
+        {fx.type==='counter'&&(
+          <div style={rowS}><span style={{fontSize:10,color:'#64748b'}}>名前:</span><input value={fx.counter||0} onChange={e=>udFx(fi,{counter:e.target.value})} style={{...iSm,width:80}} placeholder="カウンター名"/><span style={{fontSize:10,color:'#64748b'}}>数:</span><input type="number" value={fx.value||1} min={1} onChange={e=>udFx(fi,{value:+e.target.value})} style={{...iNum,width:45}}/></div>
+        )}
+        {(fx.type==='statBuff'||fx.type==='statDebuff')&&(
+          <div style={{...rowS,flexWrap:'wrap'}}>{['str','def','int'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:3}}>
+            <span style={{fontSize:10,color:'#64748b',textTransform:'uppercase'}}>{s}:</span>
+            <input type="number" value={fx[s]||0} onChange={e=>udFx(fi,{[s]:+e.target.value})} style={{...iNum,width:45}}/>
+          </div>))}<div style={{display:'flex',alignItems:'center',gap:3}}><span style={{fontSize:10,color:'#64748b'}}>T:</span><input type="number" value={fx.duration||1} min={1} onChange={e=>udFx(fi,{duration:+e.target.value})} style={{...iNum,width:40}}/></div></div>
+        )}
+        {fx.type==='debuff'&&(
+          <div style={rowS}><span style={{fontSize:10,color:'#64748b'}}>カウンター:</span><select value={fx.debuff||''} onChange={e=>udFx(fi,{debuff:e.target.value})} style={{...iSm,width:100}}>
+            <option value="">-</option>{(counterNames||[]).map(n=><option key={n} value={n}>{n}</option>)}
+          </select><span style={{fontSize:10,color:'#64748b'}}>量:</span><input type="number" value={fx.amount||1} min={1} onChange={e=>udFx(fi,{amount:+e.target.value})} style={{...iNum,width:40}}/></div>
+        )}
+      </div>))}
+      {(t.onStay||[]).length===0&&<div style={{fontSize:12,color:'#475569',textAlign:'center',padding:8}}>効果なし</div>}
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(t,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>地形を選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Class Editor ═══
+const TIERS=[{id:'初級',c:'#94a3b8'},{id:'中級',c:'#3b82f6'},{id:'上級',c:'#f59e0b'}];
+function ClassEditor({classData,setClassData,traits:traitsData}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  const [subTab,setSubTab]=useState(0); // 0=classes,1=CC,2=traits
+  const names=useMemo(()=>Object.keys(classData.classes||{}),[classData]);
+  function select(n){setSel(n);setDraft(n?JSON.parse(JSON.stringify(classData.classes[n])):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udg(s,v){setDraft(p=>({...p,growth:{...(p.growth||{}),[s]:v}}));setDirty(true);}
+  function udc(s,v){setDraft(p=>({...p,ccBonus:{...(p.ccBonus||{}),[s]:v}}));setDirty(true);}
+  function uds(s,v){const k=draft?.tier==='初級'?'slots':'slotsAdd';setDraft(p=>({...p,[k]:{...(p[k]||{}),[s]:v}}));setDirty(true);}
+  function save(){if(!sel||!draft)return;setClassData(p=>({...p,classes:{...p.classes,[sel]:draft}}));setDirty(false);}
+  function discard(){if(!sel)return;setDraft(JSON.parse(JSON.stringify(classData.classes[sel])));setDirty(false);}
+  const c=draft;
+  const sK=c?.tier==='初級'?'slots':'slotsAdd';
+
+  // CC sub-tab
+  const ccV=(<div style={{padding:16}}>
+    <h3 style={{fontSize:14,fontWeight:700,marginBottom:12}}>中級CC (midCC)</h3>
+    <div style={crd}>{Object.entries(classData.midCC||{}).map(([tag,cls])=>(<div key={tag} style={{...rowS,marginBottom:6}}>
+      <span style={{fontSize:12,color:TAGS.find(t=>t.id===tag)?.c||'#94a3b8',fontWeight:700,width:50}}>{tag} →</span>
+      <select value={cls} onChange={e=>setClassData(p=>({...p,midCC:{...p.midCC,[tag]:e.target.value}}))} style={{...iSm,width:140}}>
+        {names.map(n=><option key={n} value={n}>{n}</option>)}
+      </select>
+    </div>))}</div>
+    <h3 style={{fontSize:14,fontWeight:700,marginBottom:12,marginTop:20}}>上級CC (advCC)</h3>
+    <div style={crd}>{Object.entries(classData.advCC||{}).map(([key,opts])=>(<div key={key} style={{display:'flex',gap:6,marginBottom:6,flexWrap:'wrap',alignItems:'center'}}>
+      <span style={{fontSize:11,color:'#94a3b8',minWidth:110,flexShrink:0}}>{key} →</span>
+      {opts.map((o,oi)=>(<select key={oi} value={o} onChange={e=>{const nv=[...opts];nv[oi]=e.target.value;setClassData(p=>({...p,advCC:{...p.advCC,[key]:nv}}));}} style={{...iSm,width:130}}>
+        {names.filter(n=>classData.classes[n]?.tier==='上級').map(n=><option key={n} value={n}>{n}</option>)}
+      </select>))}
+    </div>))}</div>
+  </div>);
+  // Traits sub-tab
+  function udTrait(tid,u){setClassData(p=>({...p,traits:{...p.traits,[tid]:{...p.traits[tid],...u}}}));}
+  function addTrait(){const tid=prompt('特性ID:');if(!tid||classData.traits?.[tid])return;setClassData(p=>({...p,traits:{...p.traits,[tid]:{name:'',desc:''}}}));}
+  function delTrait(tid){if(!confirm(`特性"${tid}"を削除?`))return;setClassData(p=>{const t={...p.traits};delete t[tid];return{...p,traits:t};});}
+  const trV=(<div style={{padding:16}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+      <h3 style={{fontSize:14,fontWeight:700}}>兵種特性 (traits)</h3>
+      <button onClick={addTrait} style={{fontSize:12,padding:'6px 12px',background:'#3b82f6',color:'#fff',border:'none',borderRadius:6,cursor:'pointer'}}>+ 追加</button>
+    </div>
+    {Object.entries(classData.traits||{}).map(([tid,tr])=>(<div key={tid} style={{...crd,marginBottom:8}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+        <span style={{fontSize:12,color:'#f59e0b',fontWeight:700,flexShrink:0}}>{tid}</span>
+        <input value={tr.name||0} onChange={e=>udTrait(tid,{name:e.target.value})} style={{...iSm,flex:1}} placeholder="表示名"/>
+        <button onClick={()=>delTrait(tid)} style={{fontSize:10,padding:'3px 6px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer',flexShrink:0}}>✕</button>
+      </div>
+      <input value={tr.desc||0} onChange={e=>udTrait(tid,{desc:e.target.value})} style={{...iS,fontSize:12}} placeholder="効果説明"/>
+    </div>))}
+  </div>);
+
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{display:'flex',borderBottom:'1px solid #334155',flexShrink:0}}>
+      {['クラス','CC構造','兵種特性'].map((l,i)=>(<button key={i} onClick={()=>setSubTab(i)} style={{flex:1,padding:'8px',fontSize:12,fontWeight:600,cursor:'pointer',border:'none',borderBottom:subTab===i?'2px solid #3b82f6':'2px solid transparent',background:'transparent',color:subTab===i?'#e2e8f0':'#64748b'}}>{l}</button>))}
+    </div>
+    {subTab===0&&<div style={{flex:1,overflowY:'auto',padding:8}}>
+      {names.map(n=>{const x=classData.classes[n];const ti=TIERS.find(t=>t.id===x.tier);
+        return(<div key={n} onClick={()=>select(n)} style={{padding:'8px 12px',marginBottom:3,borderRadius:6,cursor:'pointer',background:sel===n?'rgba(59,130,246,0.15)':'#1e293b',border:sel===n?'1px solid rgba(59,130,246,0.4)':'1px solid #334155'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:10,padding:'2px 6px',borderRadius:4,background:'#334155',color:ti?.c||'#94a3b8'}}>{x.tier}</span>
+            {x.tag&&<span style={{fontSize:10,padding:'2px 5px',borderRadius:4,color:TAGS.find(t=>t.id===x.tag)?.c,background:TAGS.find(t=>t.id===x.tag)?.c+'20',fontWeight:700}}>{TAGS.find(t=>t.id===x.tag)?.l}</span>}
+            {x.tags&&x.tags.map((tg,i)=>{const tt=TAGS.find(t=>t.id===tg);return tt?<span key={i} style={{fontSize:10,padding:'2px 5px',borderRadius:4,color:tt.c,background:tt.c+'20',fontWeight:700}}>{tt.l}</span>:null;})}
+            <span style={{fontSize:13,fontWeight:600}}>{n}</span>
+            {n===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+          </div>
+          <div style={{fontSize:11,color:'#64748b',marginTop:2}}>PP:{x.pp} HP:{x.growth?.hp} STR:{x.growth?.str} DEF:{x.growth?.def} INT:{x.growth?.int}{x.trait?` [${x.trait}]`:''}</div>
+        </div>);})}
+    </div>}
+    {subTab===1&&<div style={{flex:1,overflowY:'auto'}}>{ccV}</div>}
+    {subTab===2&&<div style={{flex:1,overflowY:'auto'}}>{trV}</div>}
+  </div>);
+
+  const detV=c?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <h2 style={{fontSize:18,fontWeight:700,marginBottom:16}}>{sel}</h2>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>階級</div>
+      <div style={{display:'flex',gap:4}}>{TIERS.map(x=><button key={x.id} onClick={()=>ud({tier:x.id})} style={chip(c.tier===x.id,x.c)}>{x.id}</button>)}</div>
+      {c.tier==='中級'&&<><div style={lbl}>タグ</div><div style={{display:'flex',gap:4}}>{TAGS.slice(0,3).map(x=><button key={x.id} onClick={()=>ud({tag:x.id})} style={chip(c.tag===x.id,x.c)}>{x.l}</button>)}</div></>}
+      {c.tier==='上級'&&<><div style={lbl}>タグ(2つ)</div><div style={{display:'flex',gap:4}}>{[0,1].map(ti=>(<select key={ti} value={(c.tags||[])[ti]||0} onChange={e=>{const ts=[...(c.tags||['',''])];ts[ti]=e.target.value;ud({tags:ts});}} style={{...iSm,width:90}}>
+        {TAGS.slice(0,3).map(x=><option key={x.id} value={x.id}>{x.l} ({x.id})</option>)}
+      </select>))}</div></>}
+      <div style={lbl}>PP</div><input type="number" value={c.pp||0} onChange={e=>ud({pp:+e.target.value})} style={iNum}/>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>成長率</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:30}}>{s}</span>
+        <input type="number" value={c.growth?.[s]??0} step={0.1} onChange={e=>udg(s,+e.target.value)} style={iNum}/>
+      </div>))}</div>
+    </div>
+    {c.ccBonus!=null&&<div style={crd}>
+      <div style={{...lbl,marginTop:0}}>CC補正</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:30}}>{s}</span>
+        <input type="number" value={c.ccBonus?.[s]??0} onChange={e=>udc(s,+e.target.value)} style={iNum}/>
+      </div>))}</div>
+    </div>}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>枠数 ({sK})</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['tech','skill','item'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',width:40}}>{s}</span>
+        <input type="number" value={c[sK]?.[s]??0} onChange={e=>uds(s,+e.target.value)} style={iNum}/>
+      </div>))}</div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>射程</div>
+      {c.range?<div style={{...rowS}}><input type="number" value={c.range.min} onChange={e=>ud({range:{...c.range,min:+e.target.value}})} style={iNum}/><span style={{color:'#64748b'}}>〜</span><input type="number" value={c.range.max} onChange={e=>ud({range:{...c.range,max:+e.target.value}})} style={iNum}/></div>
+      :<span style={{fontSize:12,color:'#475569'}}>なし</span>}
+      <div style={lbl}>兵種特性</div>
+      <select value={c.trait||0} onChange={e=>ud({trait:e.target.value||null})} style={{...iSm,width:200}}><option value="">なし</option>{Object.entries(traitsData||{}).map(([tid,tr])=><option key={tid} value={tid}>{tr.name||tid} ({tid})</option>)}</select>
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(c,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>クラスを選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Unit Editor ═══
+function UnitEditor({units,setUnits,techs,traits}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  const [gFlt,setGFlt]=useState('');
+  const filtered=useMemo(()=>units.filter(u=>{if(!gFlt)return true;return u.tags?.includes(gFlt);}),[units,gFlt]);
+  function select(id){const u=units.find(x=>x.id===id);setSel(id);setDraft(u?JSON.parse(JSON.stringify(u)):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udb(s,v){setDraft(p=>({...p,base:{...(p.base||{}),[s]:v}}));setDirty(true);}
+  function save(){if(!sel||!draft)return;setUnits(p=>p.map(x=>x.id===sel?draft:x));setDirty(false);}
+  function discard(){if(!sel)return;const u=units.find(x=>x.id===sel);setDraft(u?JSON.parse(JSON.stringify(u)):null);setDirty(false);}
+  function add(){const mx=units.length;const id=`p${String(mx+1).padStart(2,'0')}`;setUnits(p=>[...p,{id,name:'新キャラ',tags:['fire','water'],base:{hp:35,str:8,def:8,int:8,mov:4,pp:2},initTechs:[],trait:null,traitDesc:null,color:'#888888'}]);select(id);}
+  function del(){if(!sel||!confirm(`"${draft?.name}"を削除?`))return;setUnits(p=>p.filter(x=>x.id!==sel));setSel(null);setDraft(null);setDirty(false);}
+  function mv(id,dir){const idx=units.findIndex(u=>u.id===id);const ni=idx+dir;if(ni<0||ni>=units.length)return;setUnits(p=>{const n=[...p];[n[idx],n[ni]]=[n[ni],n[idx]];return n;});}
+  function dup(id){const src=units.find(u=>u.id===id);if(!src)return;const mx=units.length;const nid=`p${String(mx+1).padStart(2,'0')}`;const cp={...JSON.parse(JSON.stringify(src)),id:nid,name:src.name+'_copy'};const idx=units.findIndex(u=>u.id===id);setUnits(p=>{const n=[...p];n.splice(idx+1,0,cp);return n;});select(nid);}
+  function reorderUnits(fi,ti){const fid=filtered[fi]?.id,tid=filtered[ti]?.id;if(!fid||!tid)return;const a=units.findIndex(u=>u.id===fid),b=units.findIndex(u=>u.id===tid);if(a<0||b<0)return;setUnits(p=>{const n=[...p];const [item]=n.splice(a,1);n.splice(b,0,item);return n;});}
+  const u=draft;
+  const techNames=useMemo(()=>Object.keys(techs||{}).filter(k=>!k.startsWith('_')),[techs]);
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{padding:12,borderBottom:'1px solid #334155'}}>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全</button>
+        {TAGS.slice(0,3).map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}</button>)}
+        <span style={{marginLeft:'auto',fontSize:11,color:'#475569',alignSelf:'center'}}>{filtered.length}/{units.length}</span>
+      </div>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {filtered.map((uu,i)=>{const idx=units.indexOf(uu);return(
+        <ListItem key={uu.id} selected={sel===uu.id} onClick={()=>select(uu.id)} onUp={()=>mv(uu.id,-1)} onDown={()=>mv(uu.id,1)} onDup={()=>dup(uu.id)} onDel={()=>{if(!confirm(`"${uu.name}"を削除?`))return;setUnits(p=>p.filter(x=>x.id!==uu.id));if(sel===uu.id){setSel(null);setDraft(null);setDirty(false);}}} first={idx===0} last={idx===units.length-1} idx={i} onReorder={reorderUnits}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{width:16,height:16,borderRadius:8,background:uu.color,border:'1px solid #475569',flexShrink:0,overflow:'hidden'}}>
+              {uu.chip&&<img src={`../public/chips/${uu.chip}`} style={{width:'100%',height:'100%',objectFit:'cover',imageRendering:'pixelated'}} onError={e=>{e.target.style.display='none';}}/>}
+            </div>
+            {uu.tags?.map((tg,j)=>{const tt=TAGS.find(t=>t.id===tg);return tt?<span key={j} style={{fontSize:9,color:tt.c,fontWeight:700}}>{tt.l}</span>:null;})}
+            <span style={{fontSize:13,fontWeight:600}}>{uu.name}</span>
+            <span style={{fontSize:10,color:'#475569'}}>{uu.id}</span>
+            {uu.id===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+          </div>
+          <div style={{fontSize:11,color:'#64748b',marginTop:2}}>HP:{uu.base?.hp} STR:{uu.base?.str} DEF:{uu.base?.def} INT:{uu.base?.int}{uu.trait?` [${uu.trait}]`:''}</div>
+        </ListItem>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ キャラ追加</button></div>
+  </div>);
+
+  const detV=u?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+      <div style={{width:24,height:24,borderRadius:12,background:u.color,border:'1px solid #475569',overflow:'hidden'}}>
+        {u.chip&&<img src={`../public/chips/${u.chip}`} style={{width:'100%',height:'100%',objectFit:'cover',imageRendering:'pixelated'}} onError={e=>{e.target.style.display='none';}}/>}
+      </div>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{u.name}</h2>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>ID</div><input value={u.id} onChange={e=>ud({id:e.target.value})} style={{...iSm,width:80}}/>
+      <div style={lbl}>名前</div><input value={u.name} onChange={e=>ud({name:e.target.value})} style={iS}/>
+      <div style={lbl}>色</div><div style={rowS}><input type="color" value={u.color||'#888888'} onChange={e=>ud({color:e.target.value})} style={{width:48,height:36,border:'1px solid #334155',borderRadius:4,cursor:'pointer'}}/><input value={u.color||0} onChange={e=>ud({color:e.target.value})} style={{...iSm,width:100}}/></div>
+      <div style={lbl}>チップ画像</div>
+      <div style={rowS}>
+        <input value={u.chip||''} onChange={e=>ud({chip:e.target.value||undefined})} style={{...iSm,width:180}} placeholder="ファイル名 (例: marta.png)"/>
+        {u.chip&&<img src={`../public/chips/${u.chip}`} alt="" style={{width:32,height:32,borderRadius:4,objectFit:'cover',imageRendering:'pixelated',border:'1px solid #475569'}} onError={e=>e.target.style.display='none'}/>}
+      </div>
+      <div style={{fontSize:10,color:'#475569',marginTop:2}}>public/chips/ に配置。未設定時は色＋名前フォールバック</div>
+      <div style={lbl}>タグ</div>
+      <div style={{display:'flex',gap:4}}>{[0,1].map(ti=>(<select key={ti} value={u.tags?.[ti]||0} onChange={e=>{const ts=[...(u.tags||['',''])];ts[ti]=e.target.value;ud({tags:ts});}} style={{...iSm,width:90}}>
+        {TAGS.slice(0,3).map(x=><option key={x.id} value={x.id}>{x.l} ({x.id})</option>)}
+      </select>))}</div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>基礎ステータス</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int','mov','pp'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:28}}>{s}</span>
+        <input type="number" value={u.base?.[s]??0} onChange={e=>udb(s,+e.target.value)} style={iNum}/>
+      </div>))}</div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>初期技</div>
+      {(u.initTechs||[]).map((tn,i)=>(<div key={i} style={{...rowS,marginBottom:4}}>
+        <select value={tn} onChange={e=>{const ts=[...(u.initTechs||[])];ts[i]=e.target.value;ud({initTechs:ts});}} style={{...iSm,flex:1}}>
+          <option value="">-</option>{techNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>
+        <button onClick={()=>{const ts=[...(u.initTechs||[])];ts.splice(i,1);ud({initTechs:ts});}} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>✕</button>
+      </div>))}
+      <button onClick={()=>ud({initTechs:[...(u.initTechs||[]),'猛撃']})} style={{fontSize:12,padding:'6px 12px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:6,cursor:'pointer',marginTop:4}}>+ 初期技追加</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>個性特性</div>
+      <select value={u.trait||0} onChange={e=>ud({trait:e.target.value||null,traitDesc:e.target.value?traits[e.target.value]?.desc||u.traitDesc||'':null})} style={{...iSm,width:'100%'}}>
+        <option value="">なし</option>
+        {Object.entries(traits||{}).map(([id,tr])=><option key={id} value={id}>{tr.name||id} ({id})</option>)}
+      </select>
+      {u.trait&&<div style={{fontSize:11,color:'#94a3b8',marginTop:4}}>{traits[u.trait]?.desc||u.traitDesc||''}</div>}
+      {u.trait&&!traits[u.trait]&&<><div style={lbl}>特性説明（未登録特性）</div>
+        <input value={u.traitDesc||0} onChange={e=>ud({traitDesc:e.target.value||null})} style={iS} placeholder="表示テキスト"/></>}
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(u,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>味方を選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Enemy Editor ═══
+const MOVEMENTS=[{id:'rush',l:'突撃'},{id:'reactive',l:'待機'},{id:'fixed',l:'完全待機'},{id:'flee',l:'逃避'}];
+const ACTIONS=[{id:'attack',l:'攻撃優先'},{id:'support',l:'支援優先'},{id:'debuff',l:'妨害優先'},{id:'techFocus',l:'技指定'}];
+const CHG_TRIGGERS=[{id:'mapStart',l:'マップ開始'},{id:'proximity',l:'接近'},{id:'hpBelow',l:'HP低下'},{id:'turn',l:'ターン'},{id:'onHit',l:'被弾'},{id:'engaged',l:'交戦'},{id:'inRange',l:'範囲内'},{id:'allyHit',l:'味方被弾'}];
+const AI_TRIGGERS=[{id:'hpBelow',l:'HP低下'},{id:'turn',l:'ターン'},{id:'proximity',l:'接近'},{id:'engaged',l:'交戦'},{id:'inRange',l:'範囲内'},{id:'allyDefeated',l:'味方撃破'},{id:'allyHpBelow',l:'味方HP低下'},{id:'allyAIChanged',l:'味方AI変化'}];
+function EnemyEditor({enemies,setEnemies,techs,items,parts}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  const names=useMemo(()=>Object.keys(enemies||{}),[enemies]);
+  const techNames=useMemo(()=>Object.keys(techs||{}).filter(k=>!k.startsWith('_')),[techs]);
+  const partsList=useMemo(()=>(parts||[]).filter(p=>'id' in p),[parts]);
+  function select(n){setSel(n);setDraft(n?JSON.parse(JSON.stringify(enemies[n])):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udb(s,v){setDraft(p=>({...p,base:{...(p.base||{}),[s]:v}}));setDirty(true);}
+  function udg(s,v){setDraft(p=>({...p,growth:{...(p.growth||{}),[s]:v}}));setDirty(true);}
+  function udai(u){setDraft(p=>({...p,ai:{...(p.ai||{movement:'rush',action:'attack'}),...u}}));setDirty(true);}
+  function save(){if(!sel||!draft)return;setEnemies(p=>({...p,[sel]:draft}));setDirty(false);}
+  function discard(){if(!sel)return;setDraft(JSON.parse(JSON.stringify(enemies[sel])));setDirty(false);}
+  function add(){const n=prompt('敵テンプレート名:');if(!n||enemies[n])return;setEnemies(p=>({...p,[n]:{baseLv:1,base:{hp:30,str:10,def:6,int:5,mov:4,pp:5},growth:{hp:3,str:1,def:1,int:0.5},range:{min:1,max:1},techs:[],ai:{movement:'rush',action:'attack'},color:'#dc2626'}}));select(n);}
+  function ren(){if(!sel)return;const n=prompt('新しい名前:',sel);if(!n||n===sel||enemies[n])return;
+    const saved=dirty?draft:enemies[sel];
+    setEnemies(p=>{const o={};Object.keys(p).forEach(k=>{o[k===sel?n:k]=p[k];});if(dirty)o[n]=saved;return o;});setSel(n);setDraft(JSON.parse(JSON.stringify(saved)));setDirty(false);}
+  function del(){if(!sel||!confirm(`"${sel}"を削除?`))return;setEnemies(p=>{const o={...p};delete o[sel];return o;});setSel(null);setDraft(null);setDirty(false);}
+  function dupE(){if(!sel)return;let nn=sel+'_copy';let c=2;while(enemies[nn]){nn=sel+'_copy'+c;c++;}const cp=JSON.parse(JSON.stringify(enemies[sel]));setEnemies(p=>{const o={};Object.keys(p).forEach(k=>{o[k]=p[k];if(k===sel)o[nn]=cp;});return o;});select(nn);}
+  // aiRules helpers
+  function addRule(){setDraft(p=>({...p,aiRules:[...(p.aiRules||[]),{trigger:{type:'hpBelow',pct:50},ai:{movement:'rush'}}]}));setDirty(true);}
+  function udRule(ri,u){setDraft(p=>{const rs=[...(p.aiRules||[])];rs[ri]={...rs[ri],...u};return{...p,aiRules:rs};});setDirty(true);}
+  function udRuleTr(ri,u){setDraft(p=>{const rs=[...(p.aiRules||[])];rs[ri]={...rs[ri],trigger:{...rs[ri].trigger,...u}};return{...p,aiRules:rs};});setDirty(true);}
+  function udRuleAi(ri,u){setDraft(p=>{const rs=[...(p.aiRules||[])];rs[ri]={...rs[ri],ai:{...rs[ri].ai,...u}};return{...p,aiRules:rs};});setDirty(true);}
+  function rmRule(ri){setDraft(p=>({...p,aiRules:(p.aiRules||[]).filter((_,j)=>j!==ri)}));setDirty(true);}
+
+  const e=draft;
+  const ai=e?.ai||e?.behavior&&{movement:e.behavior==='aggressive'?'rush':'reactive',action:'attack'}||{movement:'rush',action:'attack'};
+
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {names.map(n=>{const x=enemies[n];const xa=x.ai||{};const mv=xa.movement||(x.behavior==='aggressive'?'rush':x.behavior==='stationary'?'reactive':'rush');
+        return(<div key={n} onClick={()=>select(n)} style={{padding:'8px 12px',marginBottom:3,borderRadius:6,cursor:'pointer',background:sel===n?'rgba(59,130,246,0.15)':'#1e293b',border:sel===n?'1px solid rgba(59,130,246,0.4)':'1px solid #334155'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{width:16,height:16,borderRadius:4,background:x.color,border:'1px solid #475569',flexShrink:0,overflow:'hidden'}}>
+              {x.chip&&<img src={`../public/chips/${x.chip}`} style={{width:'100%',height:'100%',objectFit:'cover',imageRendering:'pixelated'}} onError={e=>{e.target.style.display='none';}}/>}
+            </div>
+            <span style={{fontSize:13,fontWeight:600}}>{n}</span>
+            {x.bossRank&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'#7f1d1d',color:'#fca5a5'}}>BOSS</span>}
+            {x.charge&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'#78350f',color:'#fbbf24'}}>CHG</span>}
+            {x.drop&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'#1e3a5f',color:'#60a5fa'}}>DROP</span>}
+            {n===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+          </div>
+          <div style={{fontSize:11,color:'#64748b',marginTop:2}}>HP:{x.base?.hp} STR:{x.base?.str} DEF:{x.base?.def} INT:{x.base?.int} PP:{x.base?.pp||0} [{mv}/{xa.action||'attack'}]</div>
+        </div>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ 敵追加</button></div>
+  </div>);
+
+  const detV=e?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+      <div style={{width:24,height:24,borderRadius:4,background:e.color,border:'1px solid #475569',overflow:'hidden'}}>
+        {e.chip&&<img src={`../public/chips/${e.chip}`} style={{width:'100%',height:'100%',objectFit:'cover',imageRendering:'pixelated'}} onError={ev=>{ev.target.style.display='none';}}/>}
+      </div>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{sel}</h2>
+      <button onClick={ren} style={{...btnP,background:'#334155',color:'#94a3b8',padding:'6px 12px',fontSize:12}}>名前変更</button>
+      <button onClick={dupE} style={{...btnP,background:'#334155',color:'#94a3b8',padding:'6px 12px',fontSize:12}}>複製</button>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+
+    {/* 基本情報 */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>色</div><div style={rowS}><input type="color" value={e.color||'#dc2626'} onChange={e2=>ud({color:e2.target.value})} style={{width:48,height:36,border:'1px solid #334155',borderRadius:4,cursor:'pointer'}}/><input value={e.color||0} onChange={e2=>ud({color:e2.target.value})} style={{...iSm,width:100}}/></div>
+      <div style={lbl}>チップ画像</div>
+      <div style={rowS}>
+        <input value={e.chip||''} onChange={e2=>ud({chip:e2.target.value||undefined})} style={{...iSm,width:180}} placeholder="ファイル名 (例: zombie.png)"/>
+        {e.chip&&<img src={`../public/chips/${e.chip}`} alt="" style={{width:32,height:32,borderRadius:4,objectFit:'cover',imageRendering:'pixelated',border:'1px solid #475569'}} onError={ev=>ev.target.style.display='none'}/>}
+      </div>
+      <div style={{...rowS,marginTop:8,gap:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:11,color:'#94a3b8'}}>初期Lv:</span>
+          <input type="number" value={e.baseLv||1} min={1} onChange={e2=>ud({baseLv:+e2.target.value})} style={iNum}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:11,color:'#94a3b8'}}>振れ幅±:</span>
+          <input type="number" value={e.variance||0} min={0} onChange={e2=>ud({variance:+e2.target.value||undefined})} style={iNum}/>
+        </div>
+      </div>
+      <div style={{fontSize:10,color:'#475569',marginTop:2}}>振れ幅: 各ステに±N（HPは±N×3）のランダム。マップ読込ごとに再抽選</div>
+      <div style={lbl}>基礎ステータス (初期Lv時点)</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int','mov','pp'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:28}}>{s}</span>
+        <input type="number" value={e.base?.[s]??0} step={s==='pp'?1:1} onChange={e2=>udb(s,+e2.target.value)} style={iNum}/>
+      </div>))}</div>
+      <div style={lbl}>成長率 (/Lv)</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:28}}>{s}</span>
+        <input type="number" value={e.growth?.[s]??0} step={0.1} onChange={e2=>udg(s,+e2.target.value)} style={iNum}/>
+      </div>))}</div>
+      <div style={{fontSize:10,color:'#475569',marginTop:4}}>base + growth × (Lv − baseLv) でスケール。配置Lv &lt; baseLvの場合はbaseLvとして扱う</div>
+      <div style={lbl}>射程</div>
+      <div style={rowS}><input type="number" value={e.range?.min??1} onChange={e2=>ud({range:{...(e.range||{}),min:+e2.target.value}})} style={iNum}/><span style={{color:'#64748b'}}>〜</span><input type="number" value={e.range?.max??1} onChange={e2=>ud({range:{...(e.range||{}),max:+e2.target.value}})} style={iNum}/></div>
+      <div style={{display:'flex',gap:12,marginTop:8}}>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={e.bossRank||false} onChange={e2=>ud({bossRank:e2.target.checked||undefined})}/> ボスランク</label>
+      </div>
+    </div>
+
+    {/* ドロップ */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span>ドロップ品</span>
+        {!e.drop?<button onClick={()=>ud({drop:{type:'item',ref:'',rate:100}})} style={{fontSize:11,padding:'4px 10px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer'}}>追加</button>
+        :<button onClick={()=>ud({drop:undefined})} style={{fontSize:11,padding:'4px 10px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button>}
+      </div>
+      {e.drop&&(<div>
+        <div style={{display:'flex',gap:4,marginBottom:6}}>
+          <button onClick={()=>ud({drop:{...e.drop,type:'item',ref:''}})} style={chip(e.drop.type==='item','#f59e0b')}>アイテム</button>
+          <button onClick={()=>ud({drop:{...e.drop,type:'part',ref:''}})} style={chip(e.drop.type==='part','#8b5cf6')}>パーツ</button>
+        </div>
+        <div style={{...rowS,marginBottom:6}}>
+          <select value={e.drop.ref||0} onChange={e2=>ud({drop:{...e.drop,ref:e2.target.value}})} style={{...iSm,flex:1}}>
+            <option value="">- 選択 -</option>
+            {e.drop.type==='item'&&(items||[]).map(it=><option key={it.id} value={it.id}>{it.name}</option>)}
+            {e.drop.type==='part'&&partsList.map(p=><option key={p.id} value={String(p.id)}>{p.name}</option>)}
+          </select>
+          <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+            <span style={{fontSize:11,color:'#64748b'}}>率%:</span>
+            <input type="number" value={e.drop.rate??100} min={0} max={100} onChange={e2=>ud({drop:{...e.drop,rate:+e2.target.value}})} style={{...iNum,width:50}}/>
+          </div>
+        </div>
+      </div>)}
+    </div>
+
+    {/* AI 2軸 */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>AI — 移動パターン</div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{MOVEMENTS.map(m=><button key={m.id} onClick={()=>udai({movement:m.id})} style={chip(ai.movement===m.id,'#3b82f6')}>{m.l}</button>)}</div>
+      <div style={lbl}>AI — 行動パターン</div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{ACTIONS.map(a=><button key={a.id} onClick={()=>udai({action:a.id})} style={chip(ai.action===a.id,'#22c55e')}>{a.l}</button>)}</div>
+      {ai.action==='techFocus'&&<><div style={lbl}>指定技</div><select value={ai.focusTech||0} onChange={e2=>udai({focusTech:e2.target.value})} style={{...iSm,width:160}}>
+        <option value="">-</option>{techNames.map(n=><option key={n} value={n}>{n}</option>)}
+      </select></>}
+    </div>
+
+    {/* 技 */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>技</div>
+      {(e.techs||[]).map((tn,i)=>(<div key={i} style={{...rowS,marginBottom:4}}>
+        <select value={tn} onChange={e2=>{const ts=[...(e.techs||[])];ts[i]=e2.target.value;ud({techs:ts});}} style={{...iSm,flex:1}}>
+          <option value="">-</option>{techNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>
+        <button onClick={()=>{const ts=[...(e.techs||[])];ts.splice(i,1);ud({techs:ts});}} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>✕</button>
+      </div>))}
+      <button onClick={()=>ud({techs:[...(e.techs||[]),'強撃']})} style={{fontSize:12,padding:'6px 12px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:6,cursor:'pointer',marginTop:4}}>+ 技追加</button>
+    </div>
+
+    {/* チャージ */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span>チャージ技</span>
+        {!e.charge?<button onClick={()=>ud({charge:{tech:'',turns:2,repeat:false,onMiss:'fire',trigger:{type:'mapStart'}}})} style={{fontSize:11,padding:'4px 10px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer'}}>追加</button>
+        :<button onClick={()=>ud({charge:undefined})} style={{fontSize:11,padding:'4px 10px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button>}
+      </div>
+      {e.charge&&(<div>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:8}}>
+          <select value={e.charge.tech||0} onChange={e2=>ud({charge:{...e.charge,tech:e2.target.value}})} style={{...iSm,flex:1}}>
+            <option value="">- 技選択 -</option>{techNames.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+          <div style={{display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:11,color:'#64748b'}}>T:</span><input type="number" value={e.charge.turns||2} min={1} onChange={e2=>ud({charge:{...e.charge,turns:+e2.target.value}})} style={{...iNum,width:50}}/></div>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+          <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}><input type="checkbox" checked={e.charge.repeat||false} onChange={e2=>ud({charge:{...e.charge,repeat:e2.target.checked}})}/> 繰返し</label>
+          <div style={{display:'flex',alignItems:'center',gap:4}}>
+            <span style={{fontSize:11,color:'#64748b'}}>不在時:</span>
+            <button onClick={()=>ud({charge:{...e.charge,onMiss:'keep'}})} style={chip(e.charge.onMiss==='keep','#22c55e')}>キープ</button>
+            <button onClick={()=>ud({charge:{...e.charge,onMiss:'fire'}})} style={chip(e.charge.onMiss==='fire'||!e.charge.onMiss,'#ef4444')}>空撃ち</button>
+          </div>
+        </div>
+        <div style={lbl}>トリガー</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:6}}>
+          {CHG_TRIGGERS.map(t=><button key={t.id} onClick={()=>ud({charge:{...e.charge,trigger:{...(e.charge.trigger||{}),type:t.id}}})} style={chip((e.charge.trigger?.type||'mapStart')===t.id,'#f59e0b')}>{t.l}</button>)}
+        </div>
+        {e.charge.trigger?.type==='proximity'&&<div style={rowS}><span style={{fontSize:11,color:'#64748b'}}>距離:</span><input type="number" value={e.charge.trigger.range||5} min={1} onChange={e2=>ud({charge:{...e.charge,trigger:{...e.charge.trigger,range:+e2.target.value}}})} style={{...iNum,width:50}}/></div>}
+        {e.charge.trigger?.type==='hpBelow'&&<div style={rowS}><span style={{fontSize:11,color:'#64748b'}}>HP%:</span><input type="number" value={e.charge.trigger.pct||50} min={1} max={100} onChange={e2=>ud({charge:{...e.charge,trigger:{...e.charge.trigger,pct:+e2.target.value}}})} style={{...iNum,width:50}}/></div>}
+        {e.charge.trigger?.type==='turn'&&<div style={rowS}><span style={{fontSize:11,color:'#64748b'}}>ターン:</span><input type="number" value={e.charge.trigger.turn||3} min={1} onChange={e2=>ud({charge:{...e.charge,trigger:{...e.charge.trigger,turn:+e2.target.value}}})} style={{...iNum,width:50}}/></div>}
+        {e.charge.trigger?.type==='allyHit'&&<div style={rowS}><span style={{fontSize:11,color:'#64748b'}}>グループ:</span><input value={e.charge.trigger.group||0} onChange={e2=>ud({charge:{...e.charge,trigger:{...e.charge.trigger,group:e2.target.value}}})} style={{...iSm,width:100}} placeholder="グループ名"/></div>}
+      </div>)}
+    </div>
+
+    {/* aiRules */}
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}><span>AI切替ルール ({(e.aiRules||[]).length})</span>
+        <button onClick={addRule} style={{fontSize:12,padding:'6px 12px',background:'#3b82f6',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',minHeight:32}}>+ 追加</button>
+      </div>
+      {(e.aiRules||[]).map((rule,ri)=>(<div key={ri} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,marginBottom:8}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <span style={{fontSize:12,fontWeight:700,color:'#94a3b8'}}>[{ri+1}]</span>
+          <button onClick={()=>rmRule(ri)} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>削除</button>
+        </div>
+        <div style={{fontSize:10,color:'#475569',marginBottom:2}}>トリガー</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:6}}>
+          {AI_TRIGGERS.map(t=><button key={t.id} onClick={()=>udRuleTr(ri,{type:t.id})} style={{...chip(rule.trigger?.type===t.id,'#f59e0b'),padding:'4px 8px',fontSize:11,minHeight:28}}>{t.l}</button>)}
+        </div>
+        {rule.trigger?.type==='hpBelow'&&<div style={{...rowS,marginBottom:6}}><span style={{fontSize:10,color:'#64748b'}}>HP%:</span><input type="number" value={rule.trigger.pct||50} min={1} max={100} onChange={e2=>udRuleTr(ri,{pct:+e2.target.value})} style={{...iNum,width:50}}/></div>}
+        {rule.trigger?.type==='turn'&&<div style={{...rowS,marginBottom:6}}><span style={{fontSize:10,color:'#64748b'}}>ターン:</span><input type="number" value={rule.trigger.turn||3} min={1} onChange={e2=>udRuleTr(ri,{turn:+e2.target.value})} style={{...iNum,width:50}}/></div>}
+        {rule.trigger?.type==='proximity'&&<div style={{...rowS,marginBottom:6}}><span style={{fontSize:10,color:'#64748b'}}>距離:</span><input type="number" value={rule.trigger.range||5} min={1} onChange={e2=>udRuleTr(ri,{range:+e2.target.value})} style={{...iNum,width:50}}/></div>}
+        {(rule.trigger?.type==='allyDefeated')&&<div style={{...rowS,marginBottom:6}}><span style={{fontSize:10,color:'#64748b'}}>グループ:</span><input value={rule.trigger.group||0} onChange={e2=>udRuleTr(ri,{group:e2.target.value})} style={{...iSm,width:80}} placeholder="グループ"/><span style={{fontSize:10,color:'#64748b'}}>数:</span><input type="number" value={rule.trigger.count||1} min={1} onChange={e2=>udRuleTr(ri,{count:+e2.target.value})} style={{...iNum,width:45}}/></div>}
+        {(rule.trigger?.type==='allyHpBelow')&&<div style={{...rowS,marginBottom:6}}><span style={{fontSize:10,color:'#64748b'}}>グループ:</span><input value={rule.trigger.group||0} onChange={e2=>udRuleTr(ri,{group:e2.target.value})} style={{...iSm,width:80}} placeholder="グループ"/><span style={{fontSize:10,color:'#64748b'}}>HP%:</span><input type="number" value={rule.trigger.pct||50} min={1} max={100} onChange={e2=>udRuleTr(ri,{pct:+e2.target.value})} style={{...iNum,width:50}}/></div>}
+        {(rule.trigger?.type==='allyAIChanged')&&<div style={{...rowS,marginBottom:6}}><span style={{fontSize:10,color:'#64748b'}}>グループ:</span><input value={rule.trigger.group||0} onChange={e2=>udRuleTr(ri,{group:e2.target.value})} style={{...iSm,width:100}} placeholder="グループ"/></div>}
+        <div style={{fontSize:10,color:'#475569',marginBottom:2,marginTop:6}}>切替先AI</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}>
+          <span style={{fontSize:10,color:'#64748b',alignSelf:'center'}}>移動:</span>
+          {MOVEMENTS.map(m=><button key={m.id} onClick={()=>udRuleAi(ri,{movement:m.id})} style={{...chip(rule.ai?.movement===m.id,'#3b82f6'),padding:'4px 8px',fontSize:11,minHeight:28}}>{m.l}</button>)}
+        </div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+          <span style={{fontSize:10,color:'#64748b',alignSelf:'center'}}>行動:</span>
+          {ACTIONS.map(a=><button key={a.id} onClick={()=>udRuleAi(ri,{action:a.id})} style={{...chip(rule.ai?.action===a.id,'#22c55e'),padding:'4px 8px',fontSize:11,minHeight:28}}>{a.l}</button>)}
+        </div>
+        {rule.ai?.action==='techFocus'&&<div style={{...rowS,marginTop:4}}><span style={{fontSize:10,color:'#64748b'}}>技:</span><select value={rule.ai.focusTech||0} onChange={e2=>udRuleAi(ri,{focusTech:e2.target.value})} style={{...iSm,width:140}}>
+          <option value="">-</option>{techNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select></div>}
+      </div>))}
+      {(e.aiRules||[]).length===0&&<div style={{fontSize:12,color:'#475569',textAlign:'center',padding:8}}>ルールなし（デフォルトAIのみ）</div>}
+    </div>
+
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(e,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>敵を選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Item Editor ═══
+function ItemEditor({items,setItems,counterNames}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  function select(id){const it=items.find(x=>x.id===id);setSel(id);setDraft(it?JSON.parse(JSON.stringify(it)):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function save(){if(!sel||!draft)return;setItems(p=>p.map(x=>x.id===sel?draft:x));setDirty(false);}
+  function discard(){if(!sel)return;const it=items.find(x=>x.id===sel);setDraft(it?JSON.parse(JSON.stringify(it)):null);setDirty(false);}
+  function add(){const id='item_'+Date.now()%10000;setItems(p=>[...p,{id,name:'新アイテム',effects:[],desc:''}]);select(id);}
+  function del(){if(!sel||!confirm(`"${draft?.name}"を削除?`))return;setItems(p=>p.filter(x=>x.id!==sel));setSel(null);setDraft(null);setDirty(false);}
+  const it=draft;
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {items.map(x=>(<div key={x.id} onClick={()=>select(x.id)} style={{padding:'8px 12px',marginBottom:3,borderRadius:6,cursor:'pointer',background:sel===x.id?'rgba(59,130,246,0.15)':'#1e293b',border:sel===x.id?'1px solid rgba(59,130,246,0.4)':'1px solid #334155'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:13,fontWeight:600}}>{x.name}</span>
+          <span style={{fontSize:9,color:'#475569'}}>{(x.effects||[]).length||(x.effect?1:0)}fx</span>
+          {x.id===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+        </div>
+        <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{x.desc}</div>
+      </div>))}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ アイテム追加</button></div>
+  </div>);
+  const detV=it?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{it.name}</h2>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>ID</div><input value={it.id} onChange={e=>ud({id:e.target.value})} style={{...iSm,width:150}}/>
+      <div style={lbl}>名前</div><input value={it.name} onChange={e=>ud({name:e.target.value})} style={iS}/>
+      <div style={lbl}>説明</div><input value={it.desc||0} onChange={e=>ud({desc:e.target.value})} style={iS}/>
+      <div style={{display:'flex',gap:12,marginTop:8}}>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={it.noAction||false} onChange={e=>ud({noAction:e.target.checked||undefined})}/> 行動消費なし</label>
+      </div>
+    </div>
+    <div style={crd}><EffectsPanel effects={it.effects||[]} onChange={fx=>{ud({effects:fx});setDirty(true);}} counterNames={counterNames}/></div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(it,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>アイテムを選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Monster Editor ═══
+function MonsterEditor({monsters,setMonsters}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  function select(i){setSel(i);setDraft(i!=null?JSON.parse(JSON.stringify(monsters[i])):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udsb(s,v){setDraft(p=>({...p,bonusSlots:{...(p.bonusSlots||{}),[s]:v}}));setDirty(true);}
+  function save(){if(sel==null||!draft)return;setMonsters(p=>{const n=[...p];n[sel]=draft;return n;});setDirty(false);}
+  function discard(){if(sel==null)return;setDraft(JSON.parse(JSON.stringify(monsters[sel])));setDirty(false);}
+  function add(){setMonsters(p=>[...p,{name:'新魔物',hp:0,str:0,def:0,int:0,mov:0,bonusSlots:{},desc:''}]);select(monsters.length);}
+  function del(){if(sel==null||!confirm(`"${draft?.name}"を削除?`))return;setMonsters(p=>p.filter((_,i)=>i!==sel));setSel(null);setDraft(null);setDirty(false);}
+  const m=draft;
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {monsters.map((mm,i)=>(<div key={i} onClick={()=>select(i)} style={{padding:'8px 12px',marginBottom:3,borderRadius:6,cursor:'pointer',background:sel===i?'rgba(59,130,246,0.15)':'#1e293b',border:sel===i?'1px solid rgba(59,130,246,0.4)':'1px solid #334155'}}>
+        <div style={{fontSize:13,fontWeight:600}}>{mm.name}</div>
+        <div style={{fontSize:11,color:'#64748b',marginTop:2}}>{mm.desc}</div>
+        {sel===i&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+      </div>))}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ 魔物追加</button></div>
+  </div>);
+  const detV=m?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{m.name}</h2>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>名前</div><input value={m.name} onChange={e=>ud({name:e.target.value})} style={iS}/>
+      <div style={lbl}>ステータス補正</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int','mov'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:28}}>{s}</span>
+        <input type="number" value={m[s]??0} onChange={e=>ud({[s]:+e.target.value})} style={iNum}/>
+      </div>))}</div>
+      <div style={lbl}>ボーナス枠</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['tech','skill','item'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',width:40}}>{s}</span>
+        <input type="number" value={m.bonusSlots?.[s]??0} onChange={e=>udsb(s,+e.target.value)} style={iNum}/>
+      </div>))}</div>
+      <div style={lbl}>説明</div><input value={m.desc||0} onChange={e=>ud({desc:e.target.value})} style={iS}/>
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(m,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>魔物を選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Trait Editor ═══
+const TRAIT_CATS=[{id:'class',l:'兵種特性',c:'#f59e0b'},{id:'personal',l:'個人特性',c:'#8b5cf6'},{id:'movement',l:'タイプ特性',c:'#22c55e'}];
+function TraitEditor({traits,setTraits,counterNames}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  const [cFlt,setCFlt]=useState('');
+  const ids=useMemo(()=>Object.keys(traits||{}),[traits]);
+  const filtered=useMemo(()=>ids.filter(id=>{if(!cFlt)return true;return(traits[id].category||'')=== cFlt;}),[ids,cFlt,traits]);
+  function select(id){setSel(id);setDraft(id?JSON.parse(JSON.stringify(traits[id])):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function save(){if(!sel||!draft)return;setTraits(p=>({...p,[sel]:draft}));setDirty(false);}
+  function discard(){if(!sel)return;setDraft(JSON.parse(JSON.stringify(traits[sel])));setDirty(false);}
+  function add(){const id=prompt('特性ID:');if(!id||traits[id])return;setTraits(p=>({...p,[id]:{name:'',category:'personal',desc:'',effects:[]}}));select(id);}
+  function ren(){if(!sel)return;const n=prompt('新しいID:',sel);if(!n||n===sel||traits[n])return;
+    const saved=dirty?draft:traits[sel];
+    setTraits(p=>{const o={};Object.keys(p).forEach(k=>{o[k===sel?n:k]=p[k];});if(dirty)o[n]=saved;return o;});setSel(n);setDraft(JSON.parse(JSON.stringify(saved)));setDirty(false);}
+  function del(){if(!sel||!confirm(`"${sel}"を削除?`))return;setTraits(p=>{const o={...p};delete o[sel];return o;});setSel(null);setDraft(null);setDirty(false);}
+  const t=draft;
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{padding:12,borderBottom:'1px solid #334155'}}>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        <button onClick={()=>setCFlt('')} style={chip(!cFlt,'#e2e8f0')}>全</button>
+        {TRAIT_CATS.map(c=><button key={c.id} onClick={()=>setCFlt(c.id===cFlt?'':c.id)} style={chip(cFlt===c.id,c.c)}>{c.l}</button>)}
+      </div>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {filtered.map(id=>{const tr=traits[id];const cat=TRAIT_CATS.find(c=>c.id===tr.category);
+        return(<div key={id} onClick={()=>select(id)} style={{padding:'8px 12px',marginBottom:3,borderRadius:6,cursor:'pointer',background:sel===id?'rgba(59,130,246,0.15)':'#1e293b',border:sel===id?'1px solid rgba(59,130,246,0.4)':'1px solid #334155'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            {cat&&<span style={{fontSize:9,padding:'2px 5px',borderRadius:4,background:cat.c+'20',color:cat.c}}>{cat.l}</span>}
+            <span style={{fontSize:13,fontWeight:600}}>{tr.name||id}</span>
+            <span style={{fontSize:9,color:'#475569'}}>{id}</span>
+            {(tr.effects||[]).length>0&&<span style={{fontSize:9,color:'#475569'}}>{tr.effects.length}fx</span>}
+            {id===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+          </div>
+          {tr.desc&&<div style={{fontSize:11,color:'#64748b',marginTop:2}}>{tr.desc}</div>}
+        </div>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ 特性追加</button></div>
+  </div>);
+  const detV=t?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{t.name||sel}</h2>
+      <button onClick={ren} style={{...btnP,background:'#334155',color:'#94a3b8',padding:'6px 12px',fontSize:12}}>ID変更</button>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>ID: <span style={{color:'#e2e8f0'}}>{sel}</span></div>
+      <div style={lbl}>表示名</div><input value={t.name||0} onChange={e=>ud({name:e.target.value})} style={iS}/>
+      <div style={lbl}>カテゴリ</div>
+      <div style={{display:'flex',gap:4}}>{TRAIT_CATS.map(c=><button key={c.id} onClick={()=>ud({category:c.id})} style={chip(t.category===c.id,c.c)}>{c.l}</button>)}</div>
+      <div style={lbl}>説明</div><input value={t.desc||0} onChange={e=>ud({desc:e.target.value})} style={iS}/>
+    </div>
+    <div style={crd}><EffectsPanel effects={t.effects||[]} onChange={fx=>{ud({effects:fx});setDirty(true);}} counterNames={counterNames}/></div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(t,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>特性を選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Minion Editor ═══
+function MinionEditor({minions,setMinions,techs,counterNames}){
+  const [sel,setSel]=useState(null);const [draft,setDraft]=useState(null);const [dirty,setDirty]=useState(false);
+  const names=useMemo(()=>Object.keys(minions||{}),[minions]);
+  const techNames=useMemo(()=>Object.keys(techs||{}).filter(k=>!k.startsWith('_')),[techs]);
+  function select(n){setSel(n);setDraft(n?JSON.parse(JSON.stringify(minions[n])):null);setDirty(false);}
+  function ud(u){setDraft(p=>({...p,...u}));setDirty(true);}
+  function udb(s,v){setDraft(p=>({...p,base:{...(p.base||{}),[s]:v}}));setDirty(true);}
+  function save(){if(!sel||!draft)return;setMinions(p=>({...p,[sel]:draft}));setDirty(false);}
+  function discard(){if(!sel)return;setDraft(JSON.parse(JSON.stringify(minions[sel])));setDirty(false);}
+  function add(){const n=prompt('ミニオン名:');if(!n||minions[n])return;setMinions(p=>({...p,[n]:{base:{hp:20,str:0,def:5,int:0,mov:0,pp:0},range:{min:1,max:1},techs:[],ai:{movement:'fixed',action:'attack'},color:'#6b7280'}}));select(n);}
+  function ren(){if(!sel)return;const n=prompt('新しい名前:',sel);if(!n||n===sel||minions[n])return;
+    const saved=dirty?draft:minions[sel];
+    setMinions(p=>{const o={};Object.keys(p).forEach(k=>{o[k===sel?n:k]=p[k];});if(dirty)o[n]=saved;return o;});setSel(n);setDraft(JSON.parse(JSON.stringify(saved)));setDirty(false);}
+  function del(){if(!sel||!confirm(`"${sel}"を削除?`))return;setMinions(p=>{const o={...p};delete o[sel];return o;});setSel(null);setDraft(null);setDirty(false);}
+  const e=draft;
+  const ai=e?.ai||{movement:'fixed',action:'attack'};
+  const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{flex:1,overflowY:'auto',padding:8}}>
+      {names.map(n=>{const x=minions[n];
+        return(<div key={n} onClick={()=>select(n)} style={{padding:'8px 12px',marginBottom:3,borderRadius:6,cursor:'pointer',background:sel===n?'rgba(59,130,246,0.15)':'#1e293b',border:sel===n?'1px solid rgba(59,130,246,0.4)':'1px solid #334155'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{width:16,height:16,borderRadius:4,background:x.color||'#6b7280',border:'1px solid #475569',flexShrink:0,overflow:'hidden'}}>
+              {x.chip&&<img src={`../public/chips/${x.chip}`} style={{width:'100%',height:'100%',objectFit:'cover',imageRendering:'pixelated'}} onError={e=>{e.target.style.display='none';}}/>}
+            </div>
+            <span style={{fontSize:13,fontWeight:600}}>{n}</span>
+            <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'#1e3a5f',color:'#60a5fa'}}>ミニオン</span>
+            {n===sel&&dirty&&<span style={{fontSize:9,color:'#f59e0b'}}>●</span>}
+          </div>
+          <div style={{fontSize:11,color:'#64748b',marginTop:2}}>HP:{x.base?.hp} DEF:{x.base?.def}</div>
+        </div>);})}
+    </div>
+    <div style={{padding:12,borderTop:'1px solid #334155'}}><button onClick={add} style={{...btnP,width:'100%',background:'#3b82f6',color:'#fff'}}>+ ミニオン追加</button></div>
+  </div>);
+  const detV=e?(<div style={{flex:1,overflowY:'auto',padding:16,paddingBottom:80}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+      <div style={{width:24,height:24,borderRadius:4,background:e.color||'#6b7280',border:'1px solid #475569',overflow:'hidden'}}>
+        {e.chip&&<img src={`../public/chips/${e.chip}`} style={{width:'100%',height:'100%',objectFit:'cover',imageRendering:'pixelated'}} onError={ev=>{ev.target.style.display='none';}}/>}
+      </div>
+      <h2 style={{fontSize:18,fontWeight:700,flex:1}}>{sel}</h2>
+      <button onClick={ren} style={{...btnP,background:'#334155',color:'#94a3b8',padding:'6px 12px',fontSize:12}}>名前変更</button>
+      <button onClick={del} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={{background:'#1e3a5f',border:'1px solid #2563eb',borderRadius:6,padding:8,marginBottom:12,fontSize:11,color:'#93c5fd'}}>
+      ミニオンは経験値を与えない・貰わない。味方召喚時はAI設定は無視される。
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>色</div><div style={rowS}><input type="color" value={e.color||'#6b7280'} onChange={e2=>ud({color:e2.target.value})} style={{width:48,height:36,border:'1px solid #334155',borderRadius:4,cursor:'pointer'}}/><input value={e.color||0} onChange={e2=>ud({color:e2.target.value})} style={{...iSm,width:100}}/></div>
+      <div style={lbl}>チップ画像</div>
+      <div style={rowS}>
+        <input value={e.chip||''} onChange={e2=>ud({chip:e2.target.value||undefined})} style={{...iSm,width:180}} placeholder="ファイル名 (例: wall.png)"/>
+        {e.chip&&<img src={`../public/chips/${e.chip}`} alt="" style={{width:32,height:32,borderRadius:4,objectFit:'cover',imageRendering:'pixelated',border:'1px solid #475569'}} onError={ev=>ev.target.style.display='none'}/>}
+      </div>
+      <div style={lbl}>基礎ステータス</div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{['hp','str','def','int','mov','pp'].map(s=>(<div key={s} style={{display:'flex',alignItems:'center',gap:4}}>
+        <span style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',width:28}}>{s}</span>
+        <input type="number" value={e.base?.[s]??0} onChange={e2=>udb(s,+e2.target.value)} style={iNum}/>
+      </div>))}</div>
+      <div style={lbl}>射程</div>
+      <div style={rowS}><input type="number" value={e.range?.min??1} onChange={e2=>ud({range:{...(e.range||{}),min:+e2.target.value}})} style={iNum}/><span style={{color:'#64748b'}}>〜</span><input type="number" value={e.range?.max??1} onChange={e2=>ud({range:{...(e.range||{}),max:+e2.target.value}})} style={iNum}/></div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>AI（敵として出現時）</div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:4}}>{MOVEMENTS.map(m=><button key={m.id} onClick={()=>ud({ai:{...ai,movement:m.id}})} style={chip(ai.movement===m.id,'#3b82f6')}>{m.l}</button>)}</div>
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{ACTIONS.map(a=><button key={a.id} onClick={()=>ud({ai:{...ai,action:a.id}})} style={chip(ai.action===a.id,'#22c55e')}>{a.l}</button>)}</div>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>技</div>
+      {(e.techs||[]).map((tn,i)=>(<div key={i} style={{...rowS,marginBottom:4}}>
+        <select value={tn} onChange={e2=>{const ts=[...(e.techs||[])];ts[i]=e2.target.value;ud({techs:ts});}} style={{...iSm,flex:1}}>
+          <option value="">-</option>{techNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>
+        <button onClick={()=>{const ts=[...(e.techs||[])];ts.splice(i,1);ud({techs:ts});}} style={{fontSize:11,padding:'4px 8px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:4,cursor:'pointer'}}>✕</button>
+      </div>))}
+      <button onClick={()=>ud({techs:[...(e.techs||[]),'強撃']})} style={{fontSize:12,padding:'6px 12px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:6,cursor:'pointer',marginTop:4}}>+ 技追加</button>
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(e,null,2)}</pre></details>
+    {dirty&&<div className="save-bar"><button onClick={save} style={{...btnP,flex:1,background:'#3b82f6',color:'#fff'}}>✓ 保存</button><button onClick={discard} style={{...btnP,background:'#334155',color:'#94a3b8'}}>破棄</button></div>}
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>ミニオンを選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>{setSel(null);setDraft(null);setDirty(false);}}/>;
+}
+
+// ═══ Counter Editor ═══
+function CounterEditor({counters,setCounters,counterNames}){
+  const [sel,setSel]=useState(null);
+  const list=counters.filter(c=>!c._comment);
+  const c=sel!=null?list[sel]:null;
+  function ud(patch){setCounters(prev=>{const n=[...prev];const ci=prev.indexOf(list[sel]);n[ci]={...n[ci],...patch};return n;});}
+  function addC(){setCounters(prev=>[...prev,{name:'新カウンター',persistent:false,display:'full',max:99,effects:[]}]);setSel(list.length);}
+  function delC(){if(!c||!confirm(c.name+'を削除？'))return;setCounters(prev=>prev.filter(x=>x!==list[sel]));setSel(null);}
+  function reorder(from,to){
+    setCounters(prev=>{
+      const items=prev.filter(x=>!x._comment);
+      const comments=prev.filter(x=>x._comment);
+      const n=[...items];const [moved]=n.splice(from,1);n.splice(to,0,moved);
+      if(sel===from)setSel(to);else if(sel!=null){if(from<sel&&to>=sel)setSel(sel-1);else if(from>sel&&to<=sel)setSel(sel+1);}
+      return [...comments,...n];
+    });
+  }
+  const listV=<div style={{padding:8}}>
+    <button onClick={addC} style={{...btnP,width:'100%',marginBottom:8,background:'#3b82f6',color:'#fff'}}>+ 追加</button>
+    {list.map((ct,i)=>(<ListItem key={ct.name+i} selected={sel===i} onClick={()=>setSel(i)} idx={i} onReorder={reorder}
+      onUp={i>0?()=>reorder(i,i-1):undefined} onDown={i<list.length-1?()=>reorder(i,i+1):undefined}
+      onDel={()=>{if(confirm(ct.name+'を削除？')){setCounters(prev=>prev.filter(x=>x!==list[i]));if(sel===i)setSel(null);else if(sel>i)setSel(sel-1);}}}
+      first={i===0} last={i===list.length-1}>
+      <div style={{fontSize:13,fontWeight:600,color:'#e2e8f0'}}>{ct.name}</div>
+      <div style={{fontSize:10,color:'#64748b'}}>
+        {ct.persistent?'持越':''}
+        {ct.buff?<span style={{color:'#34d399'}}> バフ</span>:''}
+        {ct.debuff?<span style={{color:'#fbbf24'}}> デバフ</span>:''}
+        {ct.max&&ct.max!==99?` 上限${ct.max}`:''}
+        {(ct.effects||[]).length>0?` 効果${(ct.effects||[]).length}`:''}
+      </div>
+    </ListItem>))}
+  </div>;
+
+  const detV=c?(<div style={{padding:16,overflowY:'auto',height:'100%'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+      <span style={{fontSize:16,fontWeight:700,color:'#e2e8f0'}}>{c.name}</span>
+      <button onClick={delC} style={{...btnP,background:'rgba(239,68,68,0.15)',color:'#fca5a5',padding:'6px 12px',fontSize:12}}>削除</button>
+    </div>
+    <div style={crd}>
+      <div style={{...lbl,marginTop:0}}>名前</div><input value={c.name} onChange={e=>ud({name:e.target.value})} style={iS}/>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap',marginTop:8}}>
+        <label style={{fontSize:12,color:'#94a3b8',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={c.persistent||false} onChange={e=>ud({persistent:e.target.checked})}/> マップ間持越し</label>
+        <label style={{fontSize:12,color:'#34d399',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={c.buff||false} onChange={e=>ud({buff:e.target.checked||undefined})}/> バフ</label>
+        <label style={{fontSize:12,color:'#fbbf24',display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}><input type="checkbox" checked={c.debuff||false} onChange={e=>ud({debuff:e.target.checked||undefined})}/> デバフ</label>
+      </div>
+      <div style={{display:'flex',gap:12,alignItems:'center',marginTop:8}}>
+        <span style={{fontSize:11,color:'#64748b'}}>表示:</span>
+        <select value={c.display||'full'} onChange={e=>ud({display:e.target.value})} style={{...iSm,width:120}}>
+          {DISPLAY_OPTS.map(o=><option key={o.id} value={o.id}>{o.l}</option>)}
+        </select>
+        <span style={{fontSize:11,color:'#64748b'}}>上限:</span>
+        <input type="number" value={c.max??99} min={1} onChange={e=>ud({max:+e.target.value})} style={{...iNum,width:55}}/>
+      </div>
+      <div style={{marginTop:8}}>
+        <span style={{fontSize:11,color:'#64748b'}}>status:</span>
+        <input value={c.status||''} onChange={e=>ud({status:e.target.value||undefined})} style={{...iSm,width:120,marginLeft:6}} placeholder="なし"/>
+        <span style={{fontSize:10,color:'#475569',marginLeft:6}}>エンジンが挙動判定に使うキー</span>
+      </div>
+    </div>
+    <div style={crd}>
+      <EffectsPanel effects={c.effects||[]} onChange={fx=>ud({effects:fx})} counterNames={counterNames}/>
+    </div>
+    <details style={{marginTop:8}}><summary style={{fontSize:11,color:'#475569',cursor:'pointer',padding:8}}>Raw JSON</summary>
+      <pre style={{background:'#0f172a',border:'1px solid #334155',borderRadius:6,padding:10,fontSize:11,color:'#94a3b8',overflow:'auto',maxHeight:200}}>{JSON.stringify(c,null,2)}</pre></details>
+  </div>):<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569'}}>カウンターを選択</div>;
+  return <DualLayout list={listV} detail={detV} sel={sel} onBack={()=>setSel(null)}/>;
+}
+
+// ═══ Main ═══
+const TAB_NAMES=['技','スキル','抽選','地形','クラス','味方','敵','アイテム','魔物','特性','ミニオン','カウンター'];
+const FILE_KEYS=Object.keys(ALL_FILES);
+function App(){
+  const [gd,setGd]=useState(null);const [tab,setTab]=useState(0);
+  const [techs,setTechs]=useState({});const [parts,setParts]=useState([]);
+  const [terrains,setTerrains]=useState([]);const [classData,setClassData]=useState({classes:{},midCC:{},advCC:{},traits:{}});
+  const [units,setUnits]=useState([]);const [enemies,setEnemies]=useState({});
+  const [items,setItems]=useState([]);const [monsters,setMonsters]=useState([]);
+  const [traits,setTraits]=useState({});const [minions,setMinions]=useState({});const [counters,setCounters]=useState([]);
+  function ready(d){
+    const t={...(d.techs||{})};const tp=(d.parts||[]).filter(p=>p.type==='tech'&&p.techRef);
+    for(const p of tp){if(t[p.techRef]&&!t[p.techRef].tag)t[p.techRef]={...t[p.techRef],tag:p.tag||'',rarity:p.rarity||''};}
+    setTechs(t);setParts(d.parts||[]);
+    setTerrains(d.terrains||[]);setClassData(d.classes||{classes:{},midCC:{},advCC:{},traits:{}});
+    setUnits(d.units||[]);setEnemies(d.enemies||{});setItems(d.items||[]);setMonsters(d.monsters||[]);
+    setTraits(d.traits||{});setMinions(d.minions||{});setCounters(d.counters||[]);
+    setGd(d);
+  }
+  const dataMap={techs,parts,terrains,classes:classData,units,enemies,items,monsters,traits,minions,counters};
+  const counterNames=counters.filter(c=>!c._comment&&c.name).map(c=>c.name);
+  function exp(type){const data=dataMap[type];const b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=type+'.json';a.click();URL.revokeObjectURL(u);}
+  function imp(type){
+    const input=document.createElement('input');input.type='file';input.accept='.json';
+    input.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+      r.onload=ev=>{try{const d=JSON.parse(ev.target.result);
+        if(type==='techs')setTechs(d);else if(type==='parts')setParts(d);
+        else if(type==='terrains')setTerrains(d);else if(type==='classes')setClassData(d);
+        else if(type==='units')setUnits(d);else if(type==='enemies')setEnemies(d);
+        else if(type==='items')setItems(d);else if(type==='monsters')setMonsters(d);
+        else if(type==='traits')setTraits(d);else if(type==='minions')setMinions(d);else if(type==='counters')setCounters(d);
+        alert(type+'.json を読み込みました');}catch(err){alert('Error: '+err.message);}};
+      r.readAsText(f);};input.click();
+  }
+  async function expAll(){const z=new JSZip();for(const k of FILE_KEYS)z.file(k+'.json',JSON.stringify(dataMap[k],null,2));const b=await z.generateAsync({type:'blob'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='srpg_data.zip';a.click();URL.revokeObjectURL(u);}
+  if(!gd)return<DataLoader onReady={ready}/>;
+  return(<div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
+    <div style={{background:'#1e293b',borderBottom:'1px solid #334155',padding:'8px 12px',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
+      <span style={{fontSize:14,fontWeight:700,color:'#64748b',letterSpacing:2}}>DATA EDITOR</span>
+      <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+        <select onChange={e=>{if(e.target.value){imp(e.target.value);e.target.value='';}}} defaultValue=""
+          style={{padding:'6px 10px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>
+          <option value="" disabled>📂 読込</option>
+          {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
+        </select>
+        <select onChange={e=>{if(e.target.value){exp(e.target.value);e.target.value='';}}} defaultValue=""
+          style={{padding:'6px 10px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>
+          <option value="" disabled>💾 保存</option>
+          {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
+        </select>
+        <button onClick={expAll} style={{padding:'6px 12px',fontSize:11,fontWeight:700,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>💾 全保存</button>
+      </div>
+    </div>
+    <div style={{background:'#1e293b',borderBottom:'1px solid #334155',display:'flex',flexShrink:0,overflowX:'auto'}}>
+      {TAB_NAMES.map((l,i)=>(<button key={i} onClick={()=>setTab(i)} style={{padding:'10px 12px',fontSize:12,fontWeight:600,cursor:'pointer',border:'none',borderBottom:tab===i?'2px solid #3b82f6':'2px solid transparent',background:'transparent',color:tab===i?'#e2e8f0':'#64748b',minHeight:44,whiteSpace:'nowrap',flexShrink:0}}>{l}</button>))}
+    </div>
+    <div style={{flex:1,overflow:'hidden'}}>
+      {tab===0&&<TechEditor techs={techs} setTechs={setTechs} parts={parts} setParts={setParts} counterNames={counterNames}/>}
+      {tab===1&&<SkillEditor parts={parts} setParts={setParts} counterNames={counterNames}/>}
+      {tab===2&&<DraftEditor parts={parts} setParts={setParts} techs={techs} setTechs={setTechs} counterNames={counterNames}/>}
+      {tab===3&&<TerrainEditor terrains={terrains} setTerrains={setTerrains} counterNames={counterNames}/>}
+      {tab===4&&<ClassEditor classData={classData} setClassData={setClassData} traits={traits}/>}
+      {tab===5&&<UnitEditor units={units} setUnits={setUnits} techs={techs} traits={traits}/>}
+      {tab===6&&<EnemyEditor enemies={enemies} setEnemies={setEnemies} techs={techs} items={items} parts={parts}/>}
+      {tab===7&&<ItemEditor items={items} setItems={setItems} counterNames={counterNames}/>}
+      {tab===8&&<MonsterEditor monsters={monsters} setMonsters={setMonsters}/>}
+      {tab===9&&<TraitEditor traits={traits} setTraits={setTraits} counterNames={counterNames}/>}
+      {tab===10&&<MinionEditor minions={minions} setMinions={setMinions} techs={techs} counterNames={counterNames}/>}
+      {tab===11&&<CounterEditor counters={counters} setCounters={setCounters} counterNames={counterNames}/>}
+    </div>
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

@@ -1,0 +1,2312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRPG Map Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0f172a;color:#e2e8f0;font-family:'Noto Sans JP','Hiragino Sans','Yu Gothic',sans-serif;user-select:none;overflow:hidden}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track{background:#1e293b}
+  ::-webkit-scrollbar-thumb{background:#475569;border-radius:4px}
+  input,select,textarea{font-family:inherit}
+  input[type=number]{-moz-appearance:textfield}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect,useMemo,useCallback}=React;
+
+// ── Constants ──
+const TILE_SIZES=[16,20,24,28,32,36,40,48,56,64];
+const MOVEMENTS=[{id:"rush",name:"突撃",short:"突"},{id:"reactive",name:"待機",short:"待"},{id:"fixed",name:"完全待機",short:"固"},{id:"flee",name:"逃避",short:"逃"}];
+const ACTIONS=[{id:"attack",name:"攻撃優先",short:"攻"},{id:"support",name:"支援優先",short:"支"},{id:"debuff",name:"妨害優先",short:"妨"},{id:"techFocus",name:"技指定",short:"技"}];
+const WIN_TYPES=[
+  {id:"rout",name:"敵全滅"},{id:"boss",name:"ボス撃破"},
+  {id:"survive",name:"ターン耐久"},{id:"arrive",name:"目標到達"},{id:"custom",name:"カスタム"}
+];
+const mkMap=(c,r,fill=0)=>Array.from({length:r},()=>Array(c).fill(fill));
+const mkDZ=(c,r)=>Array.from({length:r},()=>Array(c).fill(false));
+function cloneAction(a){
+  const c={...a};
+  if(a.units) c.units=a.units.map(u=>({...u}));
+  if(a.lines) c.lines=a.lines.map(l=>({...l}));
+  if(a.cells) c.cells=a.cells.map(c2=>({...c2}));
+  if(a.targetIds) c.targetIds=[...a.targetIds];
+  return c;
+}
+function cloneConditions(conds){
+  if(!conds)return null;
+  if(Array.isArray(conds)) return conds.map(c=>({...c}));
+  return [{...conds}]; // migrate old single condition
+}
+function cloneEventsV2(ev){
+  return ev.map(e=>({...e,trigger:{...e.trigger},
+    conditions:cloneConditions(e.conditions||e.condition),
+    actions:e.actions.map(a=>cloneAction(a))}));
+}
+const cloneZones=z=>{const o={};for(const k in z) o[k]=z[k].map(c=>({...c}));return o;};
+const cloneState=s=>({
+  terrain:s.terrain.map(r=>[...r]),
+  deployZone:s.deployZone.map(r=>[...r]),
+  enemies:s.enemies.map(e=>({...e,overrides:{...e.overrides}})),
+  itemBoxes:s.itemBoxes.map(b=>({...b})),
+  zones:s.zones?cloneZones(s.zones):{},
+  events:s.events?cloneEventsV2(s.events):[],
+  tileOverlay:s.tileOverlay?s.tileOverlay.map(layer=>layer.map(r=>[...r])):null,
+});
+
+// ── Data Loading Screen ──
+function DataLoader({onReady}){
+  const [status,setStatus]=useState({terrains:null,enemies:null,items:null});
+  const [data,setData]=useState({terrains:null,enemies:null,items:null});
+  const [loading,setLoading]=useState(true);
+  const fileRefs={terrains:useRef(),enemies:useRef(),items:useRef()};
+
+  useEffect(()=>{
+    (async()=>{
+      const paths={terrains:'../src/data/terrains.json',enemies:'../src/data/enemies.json',items:'../src/data/items.json'};
+      const d={};const st={};let allOk=true;
+      for(const [key,path] of Object.entries(paths)){
+        try{
+          const res=await fetch(path);
+          if(!res.ok) throw new Error(res.status);
+          d[key]=await res.json();st[key]='ok';
+        }catch{d[key]=null;st[key]='fail';allOk=false;}
+      }
+      setData(d);setStatus(st);setLoading(false);
+      if(allOk) onReady(d);
+    })();
+  },[]);
+
+  function handleFile(key,e){
+    const f=e.target.files[0];if(!f)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const parsed=JSON.parse(ev.target.result);
+        setData(prev=>({...prev,[key]:parsed}));
+        setStatus(prev=>({...prev,[key]:'ok'}));
+      }catch(err){alert('JSONパースエラー: '+err.message);}
+    };
+    reader.readAsText(f);
+  }
+
+  function canStart(){return status.terrains==='ok';}
+
+  if(loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#64748b',fontSize:14}}>データ読み込み中...</div>;
+
+  const allOk=Object.values(status).every(s=>s==='ok');
+  if(allOk) return null;
+
+  return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh'}}>
+      <div style={{background:'#1e293b',borderRadius:12,padding:32,border:'1px solid #334155',maxWidth:500,width:'100%'}}>
+        <h2 style={{fontSize:16,marginBottom:8,color:'#f59e0b'}}>⚠ データ読み込み</h2>
+        <p style={{fontSize:12,color:'#94a3b8',marginBottom:16}}>Viteサーバー経由の読み込みに失敗しました。<br/>以下のJSONファイルを手動で読み込んでください。</p>
+        {[['terrains','terrains.json',true],['enemies','enemies.json',false],['items','items.json',false]].map(([key,label,required])=>(
+          <div key={key} style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+            <span style={{fontSize:12,width:120,color:'#e2e8f0'}}>{label}{required&&<span style={{color:'#f87171'}}> *</span>}:</span>
+            <label style={{padding:'4px 12px',background:'#334155',color:'#94a3b8',borderRadius:4,fontSize:11,cursor:'pointer'}}>
+              ファイル選択
+              <input ref={fileRefs[key]} type="file" accept=".json" onChange={e=>handleFile(key,e)} style={{display:'none'}}/>
+            </label>
+            <span style={{fontSize:11,color:status[key]==='ok'?'#22c55e':'#64748b'}}>
+              {status[key]==='ok'?'✓読み込み済':'✗未読み込み'}
+            </span>
+          </div>
+        ))}
+        <p style={{fontSize:10,color:'#64748b',marginBottom:12}}>terrains.jsonのみ必須。enemies/itemsは省略可（空で開始）。</p>
+        <button disabled={!canStart()} onClick={()=>onReady(data)}
+          style={{width:'100%',padding:'10px',fontSize:13,fontWeight:700,background:canStart()?'#3b82f6':'#334155',color:canStart()?'#fff':'#64748b',border:'none',borderRadius:6,cursor:canStart()?'pointer':'default'}}>
+          エディタを開始
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Editor ──
+function MapEditor({gameData}){
+  const terrains=gameData.terrains||[];
+  const enemyTemplates=useMemo(()=>{
+    if(!gameData.enemies) return [];
+    // enemies.json is object keyed by name
+    return Object.entries(gameData.enemies).map(([name,v])=>({name,...v}));
+  },[gameData.enemies]);
+  const items=gameData.items||[];
+
+  // ── State ──
+  const [mapName,setMapName]=useState('新規マップ');
+  const [cols,setCols]=useState(20);
+  const [rows,setRows]=useState(15);
+  const [terrain,setTerrain]=useState(()=>mkMap(20,15));
+  const [deployZone,setDeployZone]=useState(()=>mkDZ(20,15));
+  const [sortieLimit,setSortieLimit]=useState(6);
+  const [enemies,setEnemies]=useState([]);
+  const [itemBoxes,setItemBoxes]=useState([]);
+  const [lootTables,setLootTables]=useState([]);
+  const [selLootTable,setSelLootTable]=useState('');
+  const [openLootIds,setOpenLootIds]=useState([]);
+  const [objective,setObjective]=useState({type:'rout',targetId:'',turnLimit:10});
+  const [zones,setZones]=useState({}); // {zoneId: [{x,y},...]}
+  const [activeZone,setActiveZone]=useState('');
+  const [mapBgm,setMapBgm]=useState({default:'',boss:'',tension:''});
+  const [events,setEvents]=useState([]);
+  const [selectedEvent,setSelectedEvent]=useState(null);
+  const [tilesets,setTilesets]=useState([]); // [{id,src,dataUrl,tileW,tileH,cols,rows}]
+  const [activeChipsetIdx,setActiveChipsetIdx]=useState(0);
+  const [tileOverlay,setTileOverlay]=useState(null);
+  const [activeLayer,setActiveLayer]=useState(0);
+  const [layerVisible,setLayerVisible]=useState([true,true,true,true]);
+  const [selTile,setSelTile]=useState(0); // encoded: chipsetIdx*10000+tileIndex
+  const [palSelStart,setPalSelStart]=useState(null); // {col,row}
+  const [palSelEnd,setPalSelEnd]=useState(null); // {col,row}
+  const [palDragging,setPalDragging]=useState(false);
+  const [overlayOpacity,setOverlayOpacity]=useState(1.0);
+  const [coreOpacity,setCoreOpacity]=useState(0.3);
+  const [palCols,setPalCols]=useState(8); // パレット列数 8 or 16
+  const [bottomH,setBottomH]=useState(300); // 下部パネル高さ
+  const [showMarkers,setShowMarkers]=useState(true);
+  const [showEnemyMarkers,setShowEnemyMarkers]=useState(true);
+  const [showItemMarkers,setShowItemMarkers]=useState(true);
+  const [showDeployMarkers,setShowDeployMarkers]=useState(true);
+
+  // UI state
+  const [activeTab,setActiveTab]=useState(0);
+  const [tool,setTool]=useState('terrain');
+  const [selTerrain,setSelTerrain]=useState(0);
+  const [selEnemy,setSelEnemy]=useState(enemyTemplates[0]?.name||'');
+  const [selMovement,setSelMovement]=useState('rush');
+  const [selAction,setSelAction]=useState('attack');
+  const [tileSize,setTileSize]=useState(32);
+  const [showGrid,setShowGrid]=useState(true);
+  const [painting,setPainting]=useState(false);
+  const [paintVal,setPaintVal]=useState(true);
+  const [hovCell,setHovCell]=useState(null);
+  const [selectedEnemy,setSelectedEnemy]=useState(null); // enemy id for property panel
+  const [exported,setExported]=useState('');
+  const [showExport,setShowExport]=useState(false);
+
+  const uidRef=useRef(1);
+  const evtUidRef=useRef(1);
+  const overlayTabVisited=useRef(false);
+  const canvasRefs=useRef([null,null,null,null]);
+  const chipsetImgCache=useRef({}); // {dataUrl: HTMLImageElement}
+
+  // ── Chipset image cache (localStorage) ──
+  const CHIPSET_STORAGE_KEY='srpg_chipset_cache';
+  function loadChipsetCache(){try{const raw=localStorage.getItem(CHIPSET_STORAGE_KEY);return raw?JSON.parse(raw):{};}catch{return{};}}
+  function saveChipsetCache(cache){try{localStorage.setItem(CHIPSET_STORAGE_KEY,JSON.stringify(cache));}catch{}}
+  function cacheChipset(src,dataUrl){const c=loadChipsetCache();c[src]=dataUrl;saveChipsetCache(c);}
+  function getCachedChipset(src){return loadChipsetCache()[src]||null;}
+
+  // Tile index encode/decode: chipsetIdx*10000+tileIndex
+  function encodeTile(chipIdx,tileIdx){return chipIdx*10000+tileIdx;}
+  function decodeTile(val){return {chipIdx:Math.floor(val/10000),tileIdx:val%10000};}
+  function getChipsetForTile(val){return tilesets[Math.floor(val/10000)]||null;}
+
+  // ── Undo/Redo ──
+  const histRef=useRef([]);
+  const histIdxRef=useRef(-1);
+  const skipSnapRef=useRef(false);
+  const [,forceRender]=useState(0);
+
+  function snap(t,dz,en,ib,zn,ev,to){
+    if(skipSnapRef.current){skipSnapRef.current=false;return;}
+    const s={terrain:t.map(r=>[...r]),deployZone:dz.map(r=>[...r]),
+      enemies:en.map(e=>({...e,overrides:{...e.overrides}})),
+      itemBoxes:ib.map(b=>({...b})),
+      zones:zn?cloneZones(zn):{},
+      events:cloneEventsV2(ev||[]),
+      tileOverlay:to?to.map(layer=>layer.map(r=>[...r])):null};
+    histRef.current=histRef.current.slice(0,histIdxRef.current+1);
+    histRef.current.push(s);
+    if(histRef.current.length>80) histRef.current.shift();
+    histIdxRef.current=histRef.current.length-1;
+  }
+  useEffect(()=>{snap(terrain,deployZone,enemies,itemBoxes,zones,events,tileOverlay);},[]);
+
+  function restoreState(s){
+    skipSnapRef.current=true;
+    setTerrain(s.terrain.map(r=>[...r]));
+    setDeployZone(s.deployZone.map(r=>[...r]));
+    setEnemies(s.enemies.map(e=>({...e,overrides:{...e.overrides}})));
+    setItemBoxes(s.itemBoxes.map(b=>({...b})));
+    setZones(s.zones?cloneZones(s.zones):{});
+    setEvents(s.events?cloneEventsV2(s.events):[]);
+    setTileOverlay(s.tileOverlay?s.tileOverlay.map(layer=>layer.map(r=>[...r])):null);
+    forceRender(n=>n+1);
+  }
+  function undo(){if(histIdxRef.current<=0)return;histIdxRef.current--;restoreState(histRef.current[histIdxRef.current]);}
+  function redo(){if(histIdxRef.current>=histRef.current.length-1)return;histIdxRef.current++;restoreState(histRef.current[histIdxRef.current]);}
+
+  function doSnap(){
+    setTimeout(()=>{
+      // Read latest from refs isn't possible with React state,
+      // so we use a trick: call snap in setState callbacks
+    },0);
+  }
+
+  // Helper: snapshot after state update
+  function snapNow(t,dz,en,ib,zn,ev,to){
+    setTimeout(()=>snap(t,dz,en,ib,zn!==undefined?zn:zones,ev||events,to!==undefined?to:tileOverlay),0);
+  }
+
+  // ── Resize ──
+  function resizeMap(nc,nr){
+    nc=Math.max(4,Math.min(50,nc));nr=Math.max(4,Math.min(50,nr));
+    const newT=Array.from({length:nr},(_,y)=>Array.from({length:nc},(_,x)=>terrain[y]?.[x]??0));
+    const newDZ=Array.from({length:nr},(_,y)=>Array.from({length:nc},(_,x)=>deployZone[y]?.[x]??false));
+    const newEn=enemies.filter(e=>e.x<nc&&e.y<nr);
+    const newIB=itemBoxes.filter(b=>b.x<nc&&b.y<nr);
+    const newZn={};for(const k in zones) newZn[k]=zones[k].filter(c=>c.x<nc&&c.y<nr);
+    const newTO=tileOverlay?tileOverlay.map(layer=>Array.from({length:nr},(_,y)=>Array.from({length:nc},(_,x)=>layer[y]?.[x]??0))):null;
+    setTerrain(newT);setDeployZone(newDZ);setEnemies(newEn);setItemBoxes(newIB);setZones(newZn);
+    if(newTO) setTileOverlay(newTO);
+    setCols(nc);setRows(nr);
+    snapNow(newT,newDZ,newEn,newIB,newZn,undefined,newTO);
+  }
+
+  // ── Map Shift ──
+  const [shiftN,setShiftN]=useState(1);
+  function shiftMap(dx,dy){
+    if(dx===0&&dy===0) return;
+    const newT=Array.from({length:rows},(_,y)=>Array.from({length:cols},(_,x)=>terrain[y-dy]?.[x-dx]??0));
+    const newDZ=Array.from({length:rows},(_,y)=>Array.from({length:cols},(_,x)=>deployZone[y-dy]?.[x-dx]??false));
+    const newTO=tileOverlay?tileOverlay.map(layer=>Array.from({length:rows},(_,y)=>Array.from({length:cols},(_,x)=>layer[y-dy]?.[x-dx]??0))):null;
+    const newEn=enemies.map(e=>({...e,x:e.x+dx,y:e.y+dy})).filter(e=>e.x>=0&&e.x<cols&&e.y>=0&&e.y<rows);
+    const newIB=itemBoxes.map(b=>({...b,x:b.x+dx,y:b.y+dy})).filter(b=>b.x>=0&&b.x<cols&&b.y>=0&&b.y<rows);
+    const newZn={};for(const k in zones) newZn[k]=zones[k].map(c=>({x:c.x+dx,y:c.y+dy})).filter(c=>c.x>=0&&c.x<cols&&c.y>=0&&c.y<rows);
+    const newEv=events.map(e=>({...e,actions:e.actions.map(a=>{
+      if(a.type==='spawn'&&a.units){return{...a,units:a.units.map(u=>({...u,x:(u.x||0)+dx,y:(u.y||0)+dy})).filter(u=>u.x>=0&&u.x<cols&&u.y>=0&&u.y<rows)};}
+      if(a.type==='terrainChange'&&a.cells){return{...a,cells:a.cells.map(c=>({...c,x:(c.x||0)+dx,y:(c.y||0)+dy})).filter(c=>c.x>=0&&c.x<cols&&c.y>=0&&c.y<rows)};}
+      return a;
+    })}));
+    setTerrain(newT);setDeployZone(newDZ);if(newTO) setTileOverlay(newTO);
+    setEnemies(newEn);setItemBoxes(newIB);setZones(newZn);setEvents(newEv);
+    snapNow(newT,newDZ,newEn,newIB,newZn,newEv,newTO);
+  }
+
+  // ── Cell paint ──
+  function paintCell(cx,cy,isFirst,button){
+    if(cx<0||cy<0||cx>=cols||cy>=rows) return;
+
+    if(tool==='terrain'){
+      setTerrain(prev=>{
+        const n=prev.map(r=>[...r]);n[cy][cx]=selTerrain;
+        snapNow(n,deployZone,enemies,itemBoxes);return n;
+      });
+    }else if(tool==='deploy'){
+      const val=isFirst?!deployZone[cy][cx]:paintVal;
+      if(isFirst) setPaintVal(val);
+      setDeployZone(prev=>{
+        const n=prev.map(r=>[...r]);n[cy][cx]=val;
+        snapNow(terrain,n,enemies,itemBoxes);return n;
+      });
+    }else if(tool==='zone'){
+      if(!activeZone) return;
+      const zoneArr=zones[activeZone]||[];
+      const exists=zoneArr.some(c=>c.x===cx&&c.y===cy);
+      const val=isFirst?!exists:paintVal;
+      if(isFirst) setPaintVal(val);
+      setZones(prev=>{
+        const arr=(prev[activeZone]||[]).filter(c=>!(c.x===cx&&c.y===cy));
+        if(val) arr.push({x:cx,y:cy});
+        const next={...prev,[activeZone]:arr};
+        snapNow(terrain,deployZone,enemies,itemBoxes,next);return next;
+      });
+    }else if(tool==='enemy'){
+      const tmpl=enemyTemplates.find(t=>t.name===selEnemy);
+      if(!tmpl) return;
+      const id='e'+(uidRef.current++);
+      const newE={id,template:selEnemy,x:cx,y:cy,ai:{movement:selMovement,action:selAction},level:tmpl.baseLv||1,overrides:{},group:[],label:''};
+      setEnemies(prev=>{
+        const next=[...prev.filter(e=>!(e.x===cx&&e.y===cy)),newE];
+        snapNow(terrain,deployZone,next,itemBoxes);return next;
+      });
+    }else if(tool==='item'){
+      const newB={x:cx,y:cy,tableId:selLootTable||''};
+      setItemBoxes(prev=>{
+        const next=[...prev.filter(b=>!(b.x===cx&&b.y===cy)),newB];
+        snapNow(terrain,deployZone,enemies,next);return next;
+      });
+    }else if(tool==='erase'){
+      const hadEnemy=enemies.find(e=>e.x===cx&&e.y===cy);
+      const hadItem=itemBoxes.find(b=>b.x===cx&&b.y===cy);
+      if(hadEnemy){
+        setEnemies(prev=>{const next=prev.filter(e=>!(e.x===cx&&e.y===cy));
+          snapNow(terrain,deployZone,next,itemBoxes);return next;});
+      }else if(hadItem){
+        setItemBoxes(prev=>{const next=prev.filter(b=>!(b.x===cx&&b.y===cy));
+          snapNow(terrain,deployZone,enemies,next);return next;});
+      }else{
+        setTerrain(prev=>{const n=prev.map(r=>[...r]);n[cy][cx]=0;
+          snapNow(n,deployZone,enemies,itemBoxes);return n;});
+        setDeployZone(prev=>{const n=prev.map(r=>[...r]);n[cy][cx]=false;return n;});
+      }
+    }
+  }
+
+  function rightClickCell(e,cx,cy){
+    e.preventDefault();
+    const hadEnemy=enemies.find(en=>en.x===cx&&en.y===cy);
+    if(hadEnemy){
+      setEnemies(prev=>{const next=prev.filter(en=>en.id!==hadEnemy.id);
+        snapNow(terrain,deployZone,next,itemBoxes);return next;});
+      if(selectedEnemy===hadEnemy.id) setSelectedEnemy(null);
+      return;
+    }
+    const hadItem=itemBoxes.find(b=>b.x===cx&&b.y===cy);
+    if(hadItem){
+      setItemBoxes(prev=>{const next=prev.filter(b=>!(b.x===cx&&b.y===cy));
+        snapNow(terrain,deployZone,enemies,next);return next;});
+    }
+  }
+
+  function middleClickCell(e,cx,cy){
+    const en=enemies.find(u=>u.x===cx&&u.y===cy);
+    if(!en) return;
+    e.preventDefault();
+    setEnemies(prev=>{
+      const next=prev.map(u=>{
+        if(u.id!==en.id) return u;
+        const idx=MOVEMENTS.findIndex(b=>b.id===(u.ai?.movement||'rush'));
+        return {...u,ai:{...(u.ai||{}),...{movement:MOVEMENTS[(idx+1)%MOVEMENTS.length].id}}};
+      });
+      snapNow(terrain,deployZone,next,itemBoxes);return next;
+    });
+  }
+
+  // ── Keyboard shortcuts ──
+  useEffect(()=>{
+    const onKey=e=>{
+      // Don't intercept when typing in inputs
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
+
+      if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();undo();return;}
+      if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey)||(e.key==='Z'))){e.preventDefault();redo();return;}
+      if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();handleDownload();return;}
+
+      const k=e.key.toLowerCase();
+      if(k==='d'){setTool('deploy');return;}
+      if(k==='e'){setTool('enemy');return;}
+      if(k==='i'){setTool('item');return;}
+      if(k==='z'&&!e.ctrlKey&&!e.metaKey){setTool('zone');return;}
+      if(k==='b'){setTool('bgm');return;}
+      if(k==='x'){setTool('erase');return;}
+      if(k==='g'){setShowGrid(p=>!p);return;}
+      if(k==='delete'){
+        if(selectedEnemy){
+          setEnemies(prev=>{const next=prev.filter(u=>u.id!==selectedEnemy);
+            snapNow(terrain,deployZone,next,itemBoxes);return next;});
+          setSelectedEnemy(null);
+        }
+        return;
+      }
+      if(k==='='||k==='+'){
+        setTileSize(prev=>{const idx=TILE_SIZES.indexOf(prev);return idx<TILE_SIZES.length-1?TILE_SIZES[idx+1]:prev;});return;
+      }
+      if(k==='-'||k==='_'){
+        setTileSize(prev=>{const idx=TILE_SIZES.indexOf(prev);return idx>0?TILE_SIZES[idx-1]:prev;});return;
+      }
+      // Number keys 1-9 for terrain
+      const num=parseInt(k);
+      if(num>=1&&num<=9&&num<=terrains.length){
+        setTool('terrain');setSelTerrain(num-1);return;
+      }
+    };
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  });
+
+  // ── Export ──
+  function buildExportData(){
+    const dz=[];
+    for(let y=0;y<rows;y++) for(let x=0;x<cols;x++) if(deployZone[y]?.[x]) dz.push({x,y});
+
+    const obj={type:objective.type};
+    if(objective.type==='boss') obj.targetId=objective.targetId||'';
+    if(objective.type==='survive') obj.turnLimit=objective.turnLimit||10;
+    if(objective.type==='arrive') obj.zoneId=objective.zoneId||'';
+
+    return {
+      name:mapName,cols,rows,terrain,
+      deployZone:dz,sortieLimit,
+      enemies:enemies.map(e=>{const o={id:e.id,template:e.template,x:e.x,y:e.y,ai:e.ai||{movement:'rush',action:'attack'},level:e.level||1};if(e.overrides&&Object.keys(e.overrides).length)o.overrides=e.overrides;if(e.group&&e.group.length)o.group=e.group;if(e.label)o.label=e.label;return o;}),
+      itemBoxes:itemBoxes.map(b=>({x:b.x,y:b.y,tableId:b.tableId||''})),
+      lootTables:lootTables,
+      zones:zones,
+      bgm:mapBgm,
+      objective:obj,
+      events:events.map(e=>({id:e.id,name:e.name,trigger:e.trigger,conditions:e.conditions||null,once:e.once,actions:e.actions})),
+      tilesets:tilesets.map(cs=>({src:cs.src,tileW:cs.tileW,tileH:cs.tileH,cols:cs.cols})),
+      tileOverlay:tileOverlay
+    };
+  }
+
+  function handleExport(){setExported(JSON.stringify(buildExportData(),null,2));setShowExport(true);}
+  function handleDownload(){
+    const b=new Blob([JSON.stringify(buildExportData(),null,2)],{type:'application/json'});
+    const u=URL.createObjectURL(b);const a=document.createElement('a');
+    a.href=u;a.download=(mapName||'map_data')+'.json';a.click();URL.revokeObjectURL(u);
+  }
+
+  function loadMapData(d){
+    if(d.name) setMapName(d.name);
+    const nc=d.cols||20,nr=d.rows||15;
+    setCols(nc);setRows(nr);
+    if(d.terrain) setTerrain(d.terrain);
+    else setTerrain(mkMap(nc,nr));
+
+    if(d.sortieLimit) setSortieLimit(d.sortieLimit);
+
+    const dz=mkDZ(nc,nr);
+    if(d.deployZone) for(const c of d.deployZone){if(dz[c.y]) dz[c.y][c.x]=true;}
+    setDeployZone(dz);
+
+    // Enemies: handle old format (behavior) and new format (ai)
+    if(d.enemies){
+      let uid=1;
+      const en=d.enemies.map((e,i)=>{
+        let ai=e.ai;
+        if(!ai&&e.behavior){ai={movement:e.behavior==='aggressive'?'rush':e.behavior==='stationary'?'reactive':'rush',action:'attack'};}
+        if(!ai) ai={movement:'rush',action:'attack'};
+        return {
+          id:e.id||('e'+(uid++)),
+          template:e.template,x:e.x,y:e.y,
+          ai,
+          level:e.level||1,
+          overrides:e.overrides||{},
+          group:Array.isArray(e.group)?e.group:e.group?[e.group]:[],
+          label:e.label||''
+        };
+      });
+      setEnemies(en);
+      uidRef.current=uid+en.length;
+    }else setEnemies([]);
+
+    // ItemBoxes
+    if(d.itemBoxes) setItemBoxes(d.itemBoxes.map(b=>({x:b.x,y:b.y,tableId:b.tableId||''})));
+    else setItemBoxes([]);
+
+    // Loot tables
+    if(d.lootTables) setLootTables(d.lootTables);
+    else if(d.itemLootTable&&d.itemLootTable.length>0){
+      // Migrate old flat lootTable
+      setLootTables([{id:'default',name:'デフォルト',maxUses:0,entries:d.itemLootTable}]);
+    } else setLootTables([]);
+
+    // Zones (named zones dict)
+    if(d.zones) setZones(d.zones);
+    else {
+      // Migrate old arriveZone to zones
+      const zn={};
+      if(d.objective?.type==='arrive'&&d.objective.arriveZone){
+        zn['arrive_default']=d.objective.arriveZone;
+      }
+      setZones(zn);
+    }
+
+    // BGM
+    if(d.bgm) setMapBgm(d.bgm);
+    else setMapBgm({default:'',boss:'',tension:''});
+
+    // Objective
+    if(d.objective){
+      const obj={
+        type:d.objective.type||'rout',
+        targetId:d.objective.targetId||'',
+        turnLimit:d.objective.turnLimit||10,
+        zoneId:d.objective.zoneId||'',
+      };
+      // Migrate old arrive format
+      if(d.objective.type==='arrive'&&!d.objective.zoneId&&d.objective.arriveZone){
+        obj.zoneId='arrive_default';
+      }
+      setObjective(obj);
+    }else{
+      setObjective({type:'rout',targetId:'',turnLimit:10,zoneId:''});
+    }
+
+    // Tilesets & TileOverlay (with localStorage cache restore)
+    function restoreChipsets(csArr){
+      const restored=csArr.map((cs,i)=>{
+        const cached=getCachedChipset(cs.src);
+        const obj={id:i,src:cs.src,dataUrl:cached,tileW:cs.tileW,tileH:cs.tileH,cols:cs.cols,rows:0};
+        if(cached){
+          const img=new Image();
+          img.onload=()=>{
+            obj.rows=Math.floor(img.height/cs.tileH);
+            obj.cols=Math.floor(img.width/cs.tileW);
+            chipsetImgCache.current[cached]=img;
+            forceRender(n=>n+1);
+          };
+          img.src=cached;
+        }
+        return obj;
+      });
+      setTilesets(restored);
+    }
+    if(d.tilesets&&d.tilesets.length>0){
+      restoreChipsets(d.tilesets);
+    }else if(d.tileset){
+      restoreChipsets([d.tileset]);
+    }else{
+      setTilesets([]);
+    }
+    setActiveChipsetIdx(0);
+    if(d.tileOverlay){
+      if(Array.isArray(d.tileOverlay[0]?.[0])){
+        setTileOverlay(d.tileOverlay);
+      }else{
+        const nc2=d.cols||20,nr2=d.rows||15;
+        setTileOverlay([d.tileOverlay,mkMap(nc2,nr2,0),mkMap(nc2,nr2,0),mkMap(nc2,nr2,0)]);
+      }
+    }else setTileOverlay(null);
+
+    // Events - migrate condition→conditions
+    if(d.events){
+      const evts=d.events.map((e,i)=>({
+        id:e.id||('evt_'+(i+1)),
+        name:e.name||'',
+        trigger:e.trigger||{type:'mapStart'},
+        conditions:e.conditions||(e.condition?[e.condition]:null),
+        once:e.once!==undefined?e.once:true,
+        actions:e.actions||[]
+      }));
+      setEvents(evts);
+      let maxEvt=0;
+      evts.forEach(e=>{const m=e.id.match(/evt_(\d+)/);if(m) maxEvt=Math.max(maxEvt,+m[1]);});
+      evtUidRef.current=maxEvt+1;
+    }else setEvents([]);
+    setSelectedEvent(null);
+
+    // Reset history
+    histRef.current=[];histIdxRef.current=-1;
+    skipSnapRef.current=false;
+    setTimeout(()=>{
+      forceRender(n=>n+1);
+    },100);
+  }
+
+  function handleFileImport(e){
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{try{loadMapData(JSON.parse(ev.target.result));}catch(err){alert('読み込み失敗: '+err.message);}};
+    r.readAsText(f);e.target.value='';
+  }
+  function handleTextImport(){
+    const input=prompt('マップJSONを貼り付け:');
+    if(!input) return;
+    try{loadMapData(JSON.parse(input));}catch(err){alert('パース失敗: '+err.message);}
+  }
+  function handleClearAll(){
+    if(!confirm('全データをクリアしますか？')) return;
+    setTerrain(mkMap(cols,rows));setDeployZone(mkDZ(cols,rows));
+    setEnemies([]);setItemBoxes([]);setZones({});
+    setLootTables([]);setMapBgm({default:'',boss:'',tension:''});
+    setSelectedEnemy(null);
+    setEvents([]);setSelectedEvent(null);
+    setTileOverlay(null);setTilesets([]);setActiveChipsetIdx(0);setSelTile(0);
+    snapNow(mkMap(cols,rows),mkDZ(cols,rows),[],[],{},[],null);
+  }
+
+  // ── Enemy property update ──
+  function updateEnemy(id,updates){
+    setEnemies(prev=>{
+      const next=prev.map(e=>e.id===id?{...e,...updates}:e);
+      snapNow(terrain,deployZone,next,itemBoxes);return next;
+    });
+  }
+
+  // ── Overlay helpers ──
+  function getPalRect(){
+    if(!palSelStart||!palSelEnd) return null;
+    const cs=tilesets[activeChipsetIdx];if(!cs) return null;
+    const c1=Math.min(palSelStart.col,palSelEnd.col),c2=Math.max(palSelStart.col,palSelEnd.col);
+    const r1=Math.min(palSelStart.row,palSelEnd.row),r2=Math.max(palSelStart.row,palSelEnd.row);
+    const w=c2-c1+1,h=r2-r1+1;
+    if(w===1&&h===1) return null;
+    const tiles=[];
+    for(let r=r1;r<=r2;r++){const row=[];for(let c=c1;c<=c2;c++){row.push(encodeTile(activeChipsetIdx,r*cs.cols+c+1));}tiles.push(row);}
+    return{w,h,tiles};
+  }
+  function paintOverlayCell(cx,cy){
+    if(!tileOverlay||cx<0||cy<0||cx>=cols||cy>=rows) return;
+    setTileOverlay(prev=>{
+      const n=prev.map(layer=>layer.map(r=>[...r]));
+      const rect=getPalRect();
+      if(rect){
+        for(let dy=0;dy<rect.h;dy++){for(let dx=0;dx<rect.w;dx++){
+          const tx=cx+dx,ty=cy+dy;
+          if(tx<cols&&ty<rows) n[activeLayer][ty][tx]=rect.tiles[dy][dx];
+        }}
+      }else{
+        n[activeLayer][cy][cx]=selTile;
+      }
+      snapNow(terrain,deployZone,enemies,itemBoxes,zones,events,n);return n;
+    });
+  }
+  function spoitTile(cx,cy){
+    if(!tileOverlay) return;
+    const idx=tileOverlay[activeLayer]?.[cy]?.[cx]||0;
+    setSelTile(idx);
+    // Switch to that chipset
+    if(idx>0){
+      const {chipIdx}=decodeTile(idx);
+      if(chipIdx>=0&&chipIdx<tilesets.length) setActiveChipsetIdx(chipIdx);
+    }
+  }
+  function addChipset(file,tileW,tileH){
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const tCols=Math.floor(img.width/tileW);
+        const tRows=Math.floor(img.height/tileH);
+        const newCs={id:tilesets.length,src:file.name,dataUrl:ev.target.result,tileW,tileH,cols:tCols,rows:tRows};
+        setTilesets(prev=>[...prev,newCs]);
+        setActiveChipsetIdx(tilesets.length);
+        if(!tileOverlay) setTileOverlay([mkMap(cols,rows,0),mkMap(cols,rows,0),mkMap(cols,rows,0),mkMap(cols,rows,0)]);
+        chipsetImgCache.current[ev.target.result]=img;
+        cacheChipset(file.name,ev.target.result);
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function reloadChipsetImage(idx,file){
+    const cs=tilesets[idx];if(!cs) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const tCols=Math.floor(img.width/cs.tileW);
+        const tRows=Math.floor(img.height/cs.tileH);
+        setTilesets(prev=>prev.map((c,i)=>i===idx?{...c,dataUrl:ev.target.result,cols:tCols,rows:tRows,src:file.name}:c));
+        chipsetImgCache.current[ev.target.result]=img;
+        cacheChipset(file.name,ev.target.result);
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function removeChipset(idx){
+    if(!confirm(`チップセット${idx}を削除しますか？\n使用中のタイルは消去されます。`)) return;
+    // Remove tiles referencing this chipset from overlay
+    if(tileOverlay){
+      setTileOverlay(prev=>{
+        const n=prev.map(layer=>layer.map(row=>row.map(val=>{
+          const {chipIdx,tileIdx}=decodeTile(val);
+          if(chipIdx===idx) return 0;
+          if(chipIdx>idx) return encodeTile(chipIdx-1,tileIdx);
+          return val;
+        })));
+        snapNow(terrain,deployZone,enemies,itemBoxes,zones,events,n);return n;
+      });
+    }
+    setTilesets(prev=>prev.filter((_,i)=>i!==idx).map((c,i)=>({...c,id:i})));
+    setActiveChipsetIdx(a=>a>=idx&&a>0?a-1:a);
+    setSelTile(0);
+  }
+  // Auto-zoom on first overlay tab visit
+  useEffect(()=>{
+    if(activeTab===1&&!overlayTabVisited.current&&tilesets.length>0){
+      setTileSize(48);overlayTabVisited.current=true;
+    }
+  },[activeTab,tilesets]);
+
+  // Canvas overlay drawing
+  const overlayCanvasRef=useRef(null);
+  useEffect(()=>{
+    const canvas=overlayCanvasRef.current;
+    if(!canvas||!tileOverlay||tilesets.length===0) return;
+    const w=cols*tileSize,h=rows*tileSize;
+    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+    const ctx=canvas.getContext('2d');
+    ctx.clearRect(0,0,w,h);
+    ctx.imageSmoothingEnabled=false;
+    for(let li=0;li<4;li++){
+      if(!layerVisible[li]) continue;
+      const layer=tileOverlay[li];if(!layer) continue;
+      ctx.globalAlpha=overlayOpacity;
+      for(let y=0;y<rows;y++){
+        for(let x=0;x<cols;x++){
+          const val=layer[y]?.[x]||0;
+          if(val===0) continue;
+          const {chipIdx,tileIdx}=decodeTile(val);
+          const cs=tilesets[chipIdx];
+          if(!cs||!cs.dataUrl) continue;
+          let img=chipsetImgCache.current[cs.dataUrl];
+          if(!img) continue;
+          const sx=((tileIdx-1)%cs.cols)*cs.tileW;
+          const sy=Math.floor((tileIdx-1)/cs.cols)*cs.tileH;
+          ctx.drawImage(img,sx,sy,cs.tileW,cs.tileH,x*tileSize,y*tileSize,tileSize,tileSize);
+        }
+      }
+    }
+    ctx.globalAlpha=1;
+  },[tileOverlay,tilesets,layerVisible,overlayOpacity,tileSize,cols,rows,activeTab]);
+
+  // ── Event helpers ──
+  function evSnap(newEv){snapNow(terrain,deployZone,enemies,itemBoxes,zones,newEv);}
+  function addEvent(){
+    const id='evt_'+(evtUidRef.current++);
+    const ev={id,name:'新規イベント',trigger:{type:'turn',turn:1,phase:'enemy'},conditions:null,once:true,actions:[]};
+    const next=[...events,ev];setEvents(next);setSelectedEvent(id);evSnap(next);
+  }
+  function removeEvent(id){
+    if(!confirm('このイベントを削除しますか？'))return;
+    const next=events.filter(e=>e.id!==id);setEvents(next);
+    if(selectedEvent===id)setSelectedEvent(null);evSnap(next);
+  }
+  function updateEvent(id,updates){
+    const next=events.map(e=>e.id===id?{...e,...updates}:e);setEvents(next);evSnap(next);
+  }
+  function moveEvent(id,dir){
+    const idx=events.findIndex(e=>e.id===id);if(idx<0)return;
+    const ni=idx+dir;if(ni<0||ni>=events.length)return;
+    const next=[...events];[next[idx],next[ni]]=[next[ni],next[idx]];setEvents(next);evSnap(next);
+  }
+  function addAction(evtId,type){
+    const defaults={
+      spawn:{type:'spawn',units:[]},
+      despawn:{type:'despawn',targetIds:[]},
+      dialogue:{type:'dialogue',lines:[]},
+      terrainChange:{type:'terrainChange',cells:[]},
+      objective:{type:'objective',result:'win'},
+      setFlag:{type:'setFlag',flag:'',value:'true'},
+      bgm:{type:'bgm',track:'',priority:false,fade:0,resume:false},
+      camera:{type:'camera',x:0,y:0,duration:500},
+      changeAI:{type:'changeAI',target:'',ai:{movement:'rush',action:'attack'}},
+    };
+    const act=defaults[type]||{type};
+    const ev=events.find(e=>e.id===evtId);if(!ev)return;
+    const next=events.map(e=>e.id===evtId?{...e,actions:[...e.actions,act]}:e);
+    setEvents(next);evSnap(next);
+  }
+  function removeAction(evtId,actIdx){
+    const next=events.map(e=>{
+      if(e.id!==evtId)return e;
+      return {...e,actions:e.actions.filter((_,i)=>i!==actIdx)};
+    });setEvents(next);evSnap(next);
+  }
+  function updateAction(evtId,actIdx,updates){
+    const next=events.map(e=>{
+      if(e.id!==evtId)return e;
+      return {...e,actions:e.actions.map((a,i)=>i===actIdx?{...a,...updates}:a)};
+    });setEvents(next);evSnap(next);
+  }
+  function moveAction(evtId,actIdx,dir){
+    const ev=events.find(e=>e.id===evtId);if(!ev)return;
+    const ni=actIdx+dir;if(ni<0||ni>=ev.actions.length)return;
+    const acts=[...ev.actions];[acts[actIdx],acts[ni]]=[acts[ni],acts[actIdx]];
+    const next=events.map(e=>e.id===evtId?{...e,actions:acts}:e);setEvents(next);evSnap(next);
+  }
+
+  // ── Datalist for events ──
+  const enemyIds=useMemo(()=>enemies.map(e=>e.id),[enemies]);
+  const enemyGroups=useMemo(()=>[...new Set(enemies.flatMap(e=>Array.isArray(e.group)?e.group:e.group?[e.group]:[]))],[enemies]);
+
+  // ── Derived values ──
+  const dzCount=deployZone.flat().filter(Boolean).length;
+  const enemyCounts=useMemo(()=>{
+    const c={};enemies.forEach(e=>{c[e.template]=(c[e.template]||0)+1;});return c;
+  },[enemies]);
+  const canUndo=histIdxRef.current>0;
+  const canRedo=histIdxRef.current<histRef.current.length-1;
+
+  const hovEnemy=hovCell?enemies.find(e=>e.x===hovCell.x&&e.y===hovCell.y):null;
+  const hovItem=hovCell?itemBoxes.find(b=>b.x===hovCell.x&&b.y===hovCell.y):null;
+  const selEnemyObj=selectedEnemy?enemies.find(e=>e.id===selectedEnemy):null;
+
+  // ── Styles ──
+  const lbl={fontSize:10,color:'#64748b',marginBottom:2,marginTop:8};
+  const iS={background:'#0f172a',color:'#e2e8f0',border:'1px solid #334155',borderRadius:4,padding:'3px 6px',fontSize:11,outline:'none'};
+  const smallInput={...iS,width:50,textAlign:'center'};
+  const smBtnS=(bg,c)=>({padding:'3px 8px',fontSize:10,fontWeight:600,background:bg,color:c,border:'none',borderRadius:3,cursor:'pointer'});
+  const toolBtnStyle=(active)=>({
+    display:'flex',alignItems:'center',gap:6,width:'100%',padding:'5px 10px',marginBottom:2,
+    background:active?'#3b82f6':'#334155',color:active?'#fff':'#94a3b8',
+    border:'none',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',textAlign:'left'
+  });
+
+  // Determine effective tool list
+  const toolList=[
+    ['terrain','🖌 地形','1'],
+    ['deploy','🟦 出撃範囲','D'],
+    ['enemy','👾 敵配置','E'],
+    ['item','📦 アイテムBOX','I'],
+    ['zone','🎯 ゾーン','Z'],
+    ['bgm','🎵 BGM設定','B'],
+    ['erase','🗑 消しゴム','X'],
+  ];
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
+      {/* ── Header ── */}
+      <div style={{background:'#1e293b',borderBottom:'1px solid #334155',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',flexShrink:0}}>
+        <span style={{fontSize:14,fontWeight:700,color:'#64748b',letterSpacing:2}}>SRPG MAP EDITOR</span>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:10,color:'#64748b'}}>マップ名:</span>
+          <input value={mapName} onChange={e=>setMapName(e.target.value)} style={{...iS,width:140}}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:10,color:'#64748b'}}>サイズ:</span>
+          <input type="number" value={cols} min={4} max={80} onChange={e=>resizeMap(+e.target.value,rows)} style={smallInput}/>
+          <span style={{color:'#64748b',fontSize:10}}>×</span>
+          <input type="number" value={rows} min={4} max={80} onChange={e=>resizeMap(cols,+e.target.value)} style={smallInput}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:2}}>
+          <span style={{fontSize:10,color:'#64748b'}}>移動:</span>
+          <button onClick={()=>shiftMap(-shiftN,0)} style={{padding:'3px 6px',fontSize:10,background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}} title="左へ">←</button>
+          <button onClick={()=>shiftMap(shiftN,0)} style={{padding:'3px 6px',fontSize:10,background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}} title="右へ">→</button>
+          <button onClick={()=>shiftMap(0,-shiftN)} style={{padding:'3px 6px',fontSize:10,background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}} title="上へ">↑</button>
+          <button onClick={()=>shiftMap(0,shiftN)} style={{padding:'3px 6px',fontSize:10,background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}} title="下へ">↓</button>
+          <input type="number" value={shiftN} min={1} max={20} onChange={e=>setShiftN(Math.max(1,+e.target.value))} style={{...smallInput,width:32}}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:10,color:'#64748b'}}>出撃枠:</span>
+          <input type="number" value={sortieLimit} min={1} max={20} onChange={e=>setSortieLimit(Math.max(1,+e.target.value))} style={smallInput}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <span style={{fontSize:10,color:'#64748b'}}>勝利条件:</span>
+          <select value={objective.type} onChange={e=>setObjective(prev=>({...prev,type:e.target.value}))}
+            style={{...iS,width:90,cursor:'pointer'}}>
+            {WIN_TYPES.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+          {objective.type==='boss'&&(
+            <input placeholder="ボスID" value={objective.targetId} onChange={e=>setObjective(prev=>({...prev,targetId:e.target.value}))}
+              style={{...iS,width:80}}/>
+          )}
+          {objective.type==='survive'&&(
+            <input type="number" value={objective.turnLimit} min={1} onChange={e=>setObjective(prev=>({...prev,turnLimit:+e.target.value}))}
+              style={{...smallInput,width:40}} title="ターン数"/>
+          )}
+          {objective.type==='arrive'&&(
+            <select value={objective.zoneId||''} onChange={e=>setObjective(prev=>({...prev,zoneId:e.target.value}))}
+              style={{...iS,width:120,cursor:'pointer'}}>
+              <option value="">-- ゾーン --</option>
+              {Object.keys(zones).map(zid=><option key={zid} value={zid}>{zid} ({(zones[zid]||[]).length}マス)</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* Hover info */}
+        <div style={{fontSize:10,color:'#475569',minWidth:200}}>
+          {hovCell&&<>
+            ({hovCell.x},{hovCell.y}) {terrains[terrain[hovCell.y]?.[hovCell.x]]?.name||''}
+            {deployZone[hovCell.y]?.[hovCell.x]&&<span style={{color:'#60a5fa',marginLeft:4}}>[出撃]</span>}
+            {hovEnemy&&<span style={{color:'#f87171',marginLeft:4}}>{hovEnemy.template}[{MOVEMENTS.find(m=>m.id===(hovEnemy.ai?.movement||'rush'))?.short}/{ACTIONS.find(a=>a.id===(hovEnemy.ai?.action||'attack'))?.short}]</span>}
+            {hovItem&&<span style={{color:'#d4a017',marginLeft:4}}>📦{hovItem.tableId?` [${hovItem.tableId}]`:''}</span>}
+          </>}
+        </div>
+
+        <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+          <button onClick={undo} disabled={!canUndo} style={ubtn(canUndo)}>↩戻</button>
+          <button onClick={redo} disabled={!canRedo} style={ubtn(canRedo)}>↪進</button>
+        </div>
+      </div>
+
+      {/* ── Tab Bar ── */}
+      <div style={{background:'#1e293b',borderBottom:'1px solid #334155',display:'flex',gap:0,flexShrink:0}}>
+        {['コアデータ','画像オーバーレイ','イベント'].map((label,i)=>(
+          <button key={i} onClick={()=>setActiveTab(i)}
+            style={{padding:'8px 24px',fontSize:12,fontWeight:600,cursor:'pointer',border:'none',borderBottom:activeTab===i?'2px solid #3b82f6':'2px solid transparent',
+              background:'transparent',color:activeTab===i?'#e2e8f0':'#64748b'}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Main Content ── */}
+      {activeTab===0&&(
+        <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+          {/* Left Panel */}
+          <div style={{width:250,background:'#1e293b',borderRight:'1px solid #334155',padding:10,display:'flex',flexDirection:'column',gap:2,flexShrink:0,overflowY:'auto'}}>
+            <div style={lbl}>ツール</div>
+            {toolList.map(([t,label,key])=>(
+              <button key={t} onClick={()=>setTool(t)} style={toolBtnStyle(tool===t)}>
+                {label}{key&&<span style={{marginLeft:'auto',fontSize:9,opacity:0.5}}>[{key}]</span>}
+              </button>
+            ))}
+
+            {/* ── Terrain Palette ── */}
+            {tool==='terrain'&&(<>
+              <div style={lbl}>地形パレット</div>
+              {terrains.map((t,i)=>(
+                <button key={t.id} onClick={()=>setSelTerrain(t.id)}
+                  style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'4px 8px',marginBottom:1,cursor:'pointer',fontSize:11,
+                    background:selTerrain===t.id?'rgba(59,130,246,0.2)':'transparent',
+                    border:selTerrain===t.id?'1px solid #3b82f6':'1px solid transparent',borderRadius:4,color:'#e2e8f0'}}>
+                  <div style={{width:16,height:16,borderRadius:3,background:t.color,border:'1px solid rgba(255,255,255,0.2)',flexShrink:0}}/>
+                  <span>{t.name}</span>
+                  <span style={{fontSize:9,color:'#64748b',marginLeft:'auto'}}>DEF{t.def} M{t.moveCost}</span>
+                </button>
+              ))}
+              <div style={lbl}>全面塗り</div>
+              <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+                {terrains.map(t=><button key={t.id} onClick={()=>{
+                  const newT=mkMap(cols,rows,t.id);setTerrain(newT);
+                  snapNow(newT,deployZone,enemies,itemBoxes);
+                }} style={{width:22,height:22,borderRadius:3,background:t.color,border:'1px solid rgba(255,255,255,0.2)',cursor:'pointer'}} title={t.name}/>)}
+              </div>
+            </>)}
+
+            {/* ── Deploy Zone ── */}
+            {tool==='deploy'&&(<>
+              <div style={lbl}>出撃範囲ペイント</div>
+              <div style={{fontSize:10,color:'#94a3b8'}}>クリック/ドラッグでトグル</div>
+              <div style={{fontSize:11,color:'#60a5fa',marginTop:4}}>出撃マス: {dzCount}</div>
+              <button onClick={()=>{const n=mkDZ(cols,rows);setDeployZone(n);snapNow(terrain,n,enemies,itemBoxes);}}
+                style={{marginTop:4,padding:'4px 8px',fontSize:10,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer'}}>
+                クリア
+              </button>
+            </>)}
+
+            {/* ── Enemy Palette ── */}
+            {tool==='enemy'&&(<>
+              <div style={lbl}>敵テンプレート</div>
+              {enemyTemplates.map(t=>(
+                <button key={t.name} onClick={()=>setSelEnemy(t.name)}
+                  style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'4px 8px',marginBottom:1,cursor:'pointer',fontSize:11,
+                    background:selEnemy===t.name?'rgba(59,130,246,0.2)':'transparent',
+                    border:selEnemy===t.name?'1px solid #3b82f6':'1px solid transparent',borderRadius:4,color:'#e2e8f0'}}>
+                  <div style={{width:14,height:14,borderRadius:7,background:t.color,border:'1px solid rgba(255,255,255,0.2)',flexShrink:0}}/>
+                  <span>{t.name}</span>
+                  {(enemyCounts[t.name]||0)>0&&<span style={{marginLeft:'auto',fontSize:9,color:'#f87171'}}>×{enemyCounts[t.name]}</span>}
+                </button>
+              ))}
+              <div style={{marginTop:6,padding:'6px 8px',background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.15)',borderRadius:4}}>
+                <div style={{fontSize:9,color:'#64748b',marginBottom:3}}>移動</div>
+                <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+                  {MOVEMENTS.map(m=>(
+                    <button key={m.id} onClick={()=>setSelMovement(m.id)} style={{
+                      padding:'4px 6px',fontSize:10,fontWeight:600,borderRadius:3,cursor:'pointer',
+                      background:selMovement===m.id?'rgba(59,130,246,0.3)':'#1e293b',
+                      color:selMovement===m.id?'#93c5fd':'#64748b',
+                      border:selMovement===m.id?'1px solid rgba(59,130,246,0.5)':'1px solid #334155',
+                    }}>{m.name}</button>
+                  ))}
+                </div>
+                <div style={{fontSize:9,color:'#64748b',marginBottom:3,marginTop:4}}>行動</div>
+                <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+                  {ACTIONS.map(a=>(
+                    <button key={a.id} onClick={()=>setSelAction(a.id)} style={{
+                      padding:'4px 6px',fontSize:10,fontWeight:600,borderRadius:3,cursor:'pointer',
+                      background:selAction===a.id?'rgba(34,197,94,0.3)':'#1e293b',
+                      color:selAction===a.id?'#86efac':'#64748b',
+                      border:selAction===a.id?'1px solid rgba(34,197,94,0.5)':'1px solid #334155',
+                    }}>{a.name}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Enemy Property Panel ── */}
+              {selEnemyObj&&(()=>{
+                const tmplData=enemyTemplates.find(t=>t.name===selEnemyObj.template);
+                const baseLv=tmplData?.baseLv||1;
+                return(
+                <div style={{marginTop:8,padding:8,background:'#0f172a',border:'1px solid #334155',borderRadius:6}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#e2e8f0',marginBottom:6}}>
+                    敵プロパティ: {selEnemyObj.template}
+                    {tmplData?.variance>0&&<span style={{fontSize:9,color:'#f59e0b',marginLeft:6}}>振れ幅±{tmplData.variance}</span>}
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:10,color:'#64748b',width:45}}>ID:</span>
+                      <input value={selEnemyObj.id} onChange={e=>{const newId=e.target.value;updateEnemy(selectedEnemy,{id:newId});setSelectedEnemy(newId);}}
+                        style={{...iS,flex:1,minWidth:0,fontSize:10}}/>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:10,color:'#64748b',width:45}}>Level:</span>
+                      <input type="number" value={selEnemyObj.level} min={baseLv} max={20}
+                        onChange={e=>updateEnemy(selectedEnemy,{level:Math.max(baseLv,+e.target.value)})}
+                        style={{...iS,width:40,fontSize:10}}/>
+                      <span style={{fontSize:9,color:'#475569'}}>初期Lv:{baseLv}</span>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:10,color:'#64748b',width:45}}>移動:</span>
+                      <select value={selEnemyObj.ai?.movement||'rush'}
+                        onChange={e=>updateEnemy(selectedEnemy,{ai:{...(selEnemyObj.ai||{}),movement:e.target.value}})}
+                        style={{...iS,flex:1,minWidth:0,fontSize:10,cursor:'pointer'}}>
+                        {MOVEMENTS.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:10,color:'#64748b',width:45}}>行動:</span>
+                      <select value={selEnemyObj.ai?.action||'attack'}
+                        onChange={e=>updateEnemy(selectedEnemy,{ai:{...(selEnemyObj.ai||{}),action:e.target.value}})}
+                        style={{...iS,flex:1,minWidth:0,fontSize:10,cursor:'pointer'}}>
+                        {ACTIONS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:10,color:'#64748b',width:45}}>Group:</span>
+                      <input value={(selEnemyObj.group||[]).join(',')} onChange={e=>updateEnemy(selectedEnemy,{group:e.target.value?e.target.value.split(',').map(s=>s.trim()).filter(Boolean):[]})}
+                        style={{...iS,flex:1,minWidth:0,fontSize:10}} placeholder="前衛,左翼（カンマ区切り）"/>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:10,color:'#64748b',width:45}}>Label:</span>
+                      <input value={selEnemyObj.label||''} onChange={e=>updateEnemy(selectedEnemy,{label:e.target.value})}
+                        style={{...iS,flex:1,minWidth:0,fontSize:10}} placeholder="表示ラベル"/>
+                    </div>
+                    <div style={{fontSize:9,color:'#64748b',marginTop:2}}>Overrides:</div>
+                    <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+                      {['hp','str','def','int','mov'].map(stat=>(
+                        <div key={stat} style={{display:'flex',alignItems:'center',gap:2}}>
+                          <span style={{fontSize:9,color:'#64748b',textTransform:'uppercase'}}>{stat}:</span>
+                          <input type="number" value={selEnemyObj.overrides?.[stat]||''}
+                            onChange={e=>{
+                              const v=e.target.value;
+                              const ov={...selEnemyObj.overrides};
+                              if(v==='') delete ov[stat]; else ov[stat]=+v;
+                              updateEnemy(selectedEnemy,{overrides:ov});
+                            }}
+                            style={{...iS,width:32,fontSize:9,padding:'2px 3px'}} placeholder="-"/>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:'flex',gap:4,marginTop:4}}>
+                      <button onClick={()=>setSelectedEnemy(null)}
+                        style={{flex:1,padding:'3px',fontSize:10,background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}}>閉じる</button>
+                      <button onClick={()=>{
+                        setEnemies(prev=>{const next=prev.filter(e=>e.id!==selectedEnemy);
+                          snapNow(terrain,deployZone,next,itemBoxes);return next;});
+                        setSelectedEnemy(null);
+                      }} style={{flex:1,padding:'3px',fontSize:10,background:'rgba(239,68,68,0.2)',color:'#fca5a5',border:'none',borderRadius:3,cursor:'pointer'}}>削除</button>
+                    </div>
+                  </div>
+                </div>
+                );
+              })()}
+            </>)}
+
+            {/* ── Item Box + Loot Tables ── */}
+            {tool==='item'&&(<>
+              <div style={lbl}>アイテムボックス配置</div>
+              <div style={{fontSize:10,color:'#94a3b8'}}>クリックで📦配置。中身は紐付けたルートテーブルからランダム</div>
+              <div style={{fontSize:10,color:'#d4a017',marginTop:4}}>配置数: {itemBoxes.length}</div>
+              {lootTables.length>0&&(<>
+                <div style={{...lbl,marginTop:6}}>配置時テーブル</div>
+                <select value={selLootTable} onChange={e=>setSelLootTable(e.target.value)}
+                  style={{...iS,width:'100%',fontSize:10,cursor:'pointer'}}>
+                  <option value="">（未指定）</option>
+                  {lootTables.map(lt=><option key={lt.id} value={lt.id}>{lt.name||lt.id}</option>)}
+                </select>
+              </>)}
+
+              {/* Loot Table Editor */}
+              <div style={{marginTop:10,paddingTop:8,borderTop:'1px solid #334155'}}>
+                <div style={{...lbl,marginTop:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <span>ルートテーブル ({lootTables.length})</span>
+                  <button onClick={()=>{
+                    const id='lt_'+(lootTables.length+1);
+                    setLootTables(prev=>[...prev,{id,name:'テーブル'+(prev.length+1),maxUses:0,spawnRate:100,entries:[]}]);
+                    setOpenLootIds(prev=>[...prev,id]);
+                    setSelLootTable(id);
+                  }} style={{fontSize:9,padding:'1px 6px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}}>+</button>
+                </div>
+                {lootTables.length===0&&<div style={{fontSize:9,color:'#475569'}}>テーブルなし</div>}
+                {lootTables.map((lt,ti)=>{
+                  const isOpen=openLootIds.includes(lt.id);
+                  const toggleOpen=()=>setOpenLootIds(prev=>prev.includes(lt.id)?prev.filter(x=>x!==lt.id):[...prev,lt.id]);
+                  return(
+                  <div key={lt.id} style={{background:isOpen?'#0f172a':'transparent',border:isOpen?'1px solid #334155':'1px solid transparent',borderRadius:4,padding:isOpen?6:0,marginBottom:4}}>
+                    <div style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',minWidth:0}} onClick={toggleOpen}>
+                      <span style={{fontSize:10,color:isOpen?'#d4a017':'#94a3b8',fontWeight:isOpen?700:400,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{isOpen?'▼':'▶'} {lt.name||lt.id}</span>
+                      <span style={{fontSize:8,color:'#475569',flexShrink:0}}>{lt.entries.length}種{(lt.spawnRate??100)<100?` ${lt.spawnRate}%`:''}</span>
+                    </div>
+                    {isOpen&&(<>
+                      <div style={{display:'flex',gap:3,alignItems:'center',marginTop:4,marginBottom:3}}>
+                        <span style={{fontSize:9,color:'#64748b',width:32,flexShrink:0,textAlign:'right'}}>ID:</span>
+                        <input value={lt.id} onChange={e=>{
+                          const nid=e.target.value.trim();if(!nid)return;
+                          const oldId=lt.id;
+                          setLootTables(prev=>prev.map((l,i)=>i===ti?{...l,id:nid}:l));
+                          setOpenLootIds(prev=>prev.map(x=>x===oldId?nid:x));
+                          if(selLootTable===oldId) setSelLootTable(nid);
+                        }} style={{...iS,flex:1,fontSize:9,minWidth:0}}/>
+                      </div>
+                      <div style={{display:'flex',gap:3,alignItems:'center',marginBottom:3}}>
+                        <span style={{fontSize:9,color:'#64748b',width:32,flexShrink:0,textAlign:'right'}}>名前:</span>
+                        <input value={lt.name||''} onChange={e=>{
+                          setLootTables(prev=>prev.map((l,i)=>i===ti?{...l,name:e.target.value}:l));
+                        }} style={{...iS,flex:1,fontSize:9,minWidth:0}}/>
+                      </div>
+                      <div style={{display:'flex',gap:3,alignItems:'center',marginBottom:3}}>
+                        <span style={{fontSize:9,color:'#64748b',width:32,flexShrink:0,textAlign:'right'}}>確率:</span>
+                        <input type="number" value={lt.spawnRate??100} min={0} max={100} onChange={e=>{
+                          setLootTables(prev=>prev.map((l,i)=>i===ti?{...l,spawnRate:+e.target.value}:l));
+                        }} style={{...iS,width:40,fontSize:9,textAlign:'center'}}/>
+                        <span style={{fontSize:8,color:'#475569'}}>%</span>
+                      </div>
+                      <div style={{display:'flex',gap:3,alignItems:'center',marginBottom:5}}>
+                        <span style={{fontSize:9,color:'#64748b',width:32,flexShrink:0,textAlign:'right'}}>回数:</span>
+                        <input type="number" value={lt.maxUses||0} min={0} onChange={e=>{
+                          setLootTables(prev=>prev.map((l,i)=>i===ti?{...l,maxUses:+e.target.value}:l));
+                        }} style={{...iS,width:40,fontSize:9,textAlign:'center'}} title="0=無制限"/>
+                        <span style={{fontSize:8,color:'#475569'}}>0=∞</span>
+                      </div>
+                      {lt.entries.map((entry,ei)=>{
+                        const totalW=lt.entries.reduce((s,e)=>s+e.weight,0);
+                        const pct=totalW>0?Math.round(entry.weight/totalW*100):0;
+                        return(
+                        <div key={ei} style={{display:'flex',gap:2,alignItems:'center',marginBottom:2}}>
+                          <select value={entry.itemId} onChange={e=>{
+                            const n=[...lootTables];n[ti]={...n[ti],entries:n[ti].entries.map((en,j)=>j===ei?{...en,itemId:e.target.value}:en)};setLootTables(n);
+                          }} style={{...iS,flex:1,fontSize:9,cursor:'pointer',minWidth:0}}>
+                            {items.map(it=><option key={it.id} value={it.id}>{it.name}</option>)}
+                          </select>
+                          <input type="number" value={entry.weight} min={1} onChange={e=>{
+                            const n=[...lootTables];n[ti]={...n[ti],entries:n[ti].entries.map((en,j)=>j===ei?{...en,weight:Math.max(1,+e.target.value)}:en)};setLootTables(n);
+                          }} style={{...iS,width:30,fontSize:9,textAlign:'center'}} title="重み"/>
+                          <span style={{fontSize:8,color:'#64748b',width:22,textAlign:'right',flexShrink:0}}>{pct}%</span>
+                          <button onClick={()=>{
+                            const n=[...lootTables];n[ti]={...n[ti],entries:n[ti].entries.filter((_,j)=>j!==ei)};setLootTables(n);
+                          }} style={{fontSize:9,color:'#f87171',background:'none',border:'none',cursor:'pointer',flexShrink:0}}>×</button>
+                        </div>
+                        );
+                      })}
+                      <div style={{display:'flex',gap:4,marginTop:2}}>
+                        <button onClick={()=>{
+                          const n=[...lootTables];n[ti]={...n[ti],entries:[...n[ti].entries,{itemId:items[0]?.id||'',weight:10}]};setLootTables(n);
+                        }} style={{fontSize:9,padding:'2px 6px',background:'#334155',color:'#94a3b8',border:'none',borderRadius:3,cursor:'pointer'}}>+ アイテム</button>
+                        <button onClick={()=>{
+                          if(!confirm(`テーブル "${lt.name||lt.id}" を削除?`))return;
+                          setLootTables(prev=>prev.filter((_,i)=>i!==ti));
+                          setOpenLootIds(prev=>prev.filter(x=>x!==lt.id));
+                          if(selLootTable===lt.id) setSelLootTable('');
+                        }} style={{fontSize:9,padding:'2px 6px',background:'rgba(239,68,68,0.15)',color:'#fca5a5',border:'none',borderRadius:3,cursor:'pointer',marginLeft:'auto'}}>削除</button>
+                      </div>
+                    </>)}
+                  </div>
+                  );
+                })}
+              </div>
+            </>)}
+
+            {/* ── Zone Painter ── */}
+            {tool==='zone'&&(<>
+              <div style={lbl}>名前付きゾーン</div>
+              <div style={{fontSize:10,color:'#94a3b8',marginBottom:6}}>到達判定やイベントで使うゾーンをペイント</div>
+              <div style={{display:'flex',gap:3,marginBottom:6}}>
+                <input id="newZoneId" placeholder="ゾーンID" style={{...iS,flex:1,fontSize:10,minWidth:0}}/>
+                <button onClick={()=>{
+                  const id=document.getElementById('newZoneId').value.trim();
+                  if(!id||zones[id])return;
+                  setZones(prev=>{const n={...prev,[id]:[]};snapNow(terrain,deployZone,enemies,itemBoxes,n);return n;});
+                  setActiveZone(id);document.getElementById('newZoneId').value='';
+                }} style={{...smBtnS('#3b82f6','#fff'),fontSize:10,flexShrink:0,padding:'4px 10px'}}>追加</button>
+              </div>
+              {Object.keys(zones).length===0&&<div style={{fontSize:10,color:'#475569'}}>ゾーンなし</div>}
+              {Object.keys(zones).map(zid=>(
+                <div key={zid} style={{display:'flex',alignItems:'center',gap:3,marginBottom:2}}>
+                  <button onClick={()=>setActiveZone(zid)}
+                    style={{flex:1,padding:'4px 6px',fontSize:10,fontWeight:activeZone===zid?700:400,
+                      background:activeZone===zid?'rgba(34,197,94,0.2)':'transparent',
+                      border:activeZone===zid?'1px solid rgba(34,197,94,0.5)':'1px solid #334155',
+                      borderRadius:3,color:activeZone===zid?'#22c55e':'#94a3b8',cursor:'pointer',textAlign:'left',
+                      minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {zid} <span style={{fontSize:9,color:'#475569'}}>({(zones[zid]||[]).length})</span>
+                  </button>
+                  <button onClick={()=>{
+                    if(!confirm(`ゾーン "${zid}" を削除?`))return;
+                    setZones(prev=>{const n={...prev};delete n[zid];snapNow(terrain,deployZone,enemies,itemBoxes,n);return n;});
+                    if(activeZone===zid) setActiveZone('');
+                  }} style={{fontSize:9,color:'#f87171',background:'none',border:'none',cursor:'pointer',flexShrink:0}}>×</button>
+                </div>
+              ))}
+              {activeZone&&<div style={{fontSize:10,color:'#22c55e',marginTop:4}}>編集中: {activeZone} — クリック/ドラッグで塗り</div>}
+            </>)}
+
+            {/* ── BGM Settings ── */}
+            {tool==='bgm'&&(<>
+              <div style={lbl}>マップBGM設定</div>
+              <div style={{fontSize:10,color:'#94a3b8',marginBottom:6}}>フェーズごとのBGMトラックIDを指定</div>
+              {[{k:'default',label:'通常'},{k:'boss',label:'ボス'},{k:'tension',label:'緊迫'}].map(({k,label})=>(
+                <div key={k} style={{display:'flex',gap:4,alignItems:'center',marginBottom:4}}>
+                  <span style={{fontSize:10,color:'#64748b',width:36,flexShrink:0,textAlign:'right'}}>{label}:</span>
+                  <input value={mapBgm[k]||''} onChange={e=>setMapBgm(prev=>({...prev,[k]:e.target.value}))}
+                    style={{...iS,flex:1,fontSize:10,minWidth:0}} placeholder="track_id"/>
+                </div>
+              ))}
+            </>)}
+
+            {/* ── Erase ── */}
+            {tool==='erase'&&(<>
+              <div style={lbl}>消しゴム</div>
+              <div style={{fontSize:10,color:'#94a3b8'}}>クリックで敵→アイテム→地形の順に削除</div>
+            </>)}
+
+            {/* Stats */}
+            <div style={{marginTop:'auto',paddingTop:8,borderTop:'1px solid #334155',fontSize:10,color:'#475569'}}>
+              敵:{enemies.length} 出撃枠:{sortieLimit} 出撃マス:{dzCount} マップ:{cols}×{rows}
+            </div>
+          </div>
+
+          {/* ── Map Drawing Area ── */}
+          <div style={{flex:1,overflow:'auto',background:'#0f172a'}}
+            onWheel={e=>{e.preventDefault();setTileSize(prev=>{const idx=TILE_SIZES.indexOf(prev);if(e.deltaY<0) return idx<TILE_SIZES.length-1?TILE_SIZES[idx+1]:prev;if(e.deltaY>0) return idx>0?TILE_SIZES[idx-1]:prev;return prev;});}}
+            onMouseUp={()=>setPainting(false)} onMouseLeave={()=>{setPainting(false);setHovCell(null);}}>
+            <div style={{width:cols*tileSize,height:rows*tileSize,position:'relative',cursor:'crosshair',userSelect:'none',margin:8}}
+              onMouseDown={e=>{e.preventDefault();if(e.button===0){setPainting(true);}}}
+              onContextMenu={e=>e.preventDefault()}>
+              {terrain.flatMap((row,y)=>row.map((t,x)=>{
+                const tt=terrains[t]||terrains[0]||{color:'#333',name:'?'};
+                const en=enemies.find(e=>e.x===x&&e.y===y);
+                const ib=itemBoxes.find(b=>b.x===x&&b.y===y);
+                const isDZ=deployZone[y]?.[x];
+                const zoneHere=Object.entries(zones).filter(([zid,cells])=>cells.some(c=>c.x===x&&c.y===y));
+                const isH=hovCell?.x===x&&hovCell?.y===y;
+                const enTmpl=en?enemyTemplates.find(t=>t.name===en.template):null;
+                const bShort=en?MOVEMENTS.find(m=>m.id===(en.ai?.movement||'rush'))?.short:'';
+                const isSelected=en&&selectedEnemy===en.id;
+
+                return(
+                  <div key={`${x}-${y}`}
+                    onMouseDown={e=>{
+                      e.preventDefault();
+                      if(e.button===0){
+                        // If enemy tool and clicking existing enemy, open properties
+                        if(tool==='enemy'&&en){setSelectedEnemy(en.id);return;}
+                        paintCell(x,y,true,0);
+                      }
+                      if(e.button===1){middleClickCell(e,x,y);}
+                    }}
+                    onMouseEnter={()=>{if(painting) paintCell(x,y,false,0);setHovCell({x,y});}}
+                    onContextMenu={e=>rightClickCell(e,x,y)}
+                    style={{position:'absolute',left:x*tileSize,top:y*tileSize,width:tileSize,height:tileSize,
+                      background:tt.color,
+                      borderRight:showGrid?'1px solid rgba(0,0,0,0.15)':'none',
+                      borderBottom:showGrid?'1px solid rgba(0,0,0,0.15)':'none',
+                      outline:isH?'2px solid rgba(255,255,255,0.4)':isSelected?'2px solid #f59e0b':'none',
+                      outlineOffset:'-2px',zIndex:isH||isSelected?1:0}}>
+                    {/* Deploy zone overlay */}
+                    {isDZ&&<div style={{position:'absolute',inset:1,borderRadius:2,background:'rgba(59,130,246,0.2)',border:'1px solid rgba(59,130,246,0.35)',pointerEvents:'none'}}/>}
+                    {/* Zone overlays */}
+                    {zoneHere.length>0&&<div style={{position:'absolute',inset:1,borderRadius:2,background:'rgba(34,197,94,0.2)',border:'1px solid rgba(34,197,94,0.4)',pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <span style={{fontSize:tileSize<30?5:7,color:'rgba(34,197,94,0.8)',fontWeight:700}}>{zoneHere.map(([z])=>z).join(',')}</span>
+                    </div>}
+                    {/* Item box */}
+                    {ib&&!en&&<div style={{position:'absolute',inset:2,borderRadius:4,background:'rgba(212,160,23,0.7)',
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      border:'1px solid rgba(212,160,23,0.9)',pointerEvents:'none'}}>
+                      <span style={{fontSize:tileSize<30?6:8,color:'#fff',fontWeight:700,textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>📦</span>
+                    </div>}
+                    {/* Enemy unit */}
+                    {en&&enTmpl&&<div style={{position:'absolute',inset:2,borderRadius:4,
+                      background:enTmpl.color||'#dc2626',opacity:0.9,
+                      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                      border:'2px solid rgba(0,0,0,0.3)',textShadow:'0 1px 2px rgba(0,0,0,0.5)',
+                      pointerEvents:'none',overflow:'hidden'}}>
+                      <div style={{fontSize:tileSize<30?6:tileSize<34?7:9,fontWeight:700,color:'#fff',lineHeight:1}}>{en.template}</div>
+                      <div style={{fontSize:tileSize<30?5:7,color:'rgba(255,255,255,0.7)',lineHeight:1,marginTop:1}}>{bShort}</div>
+                    </div>}
+                  </div>
+                );
+              }))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab 2: Image Overlay ── */}
+      {activeTab===1&&(()=>{
+        const PAL_TILE=48;
+        const activeCs=tilesets[activeChipsetIdx]||null;
+        const totalTiles=activeCs?(activeCs.cols*(activeCs.rows||0)):0;
+        // パレット範囲選択の矩形
+        const selTileRect=(()=>{
+          if(!palSelStart||!palSelEnd||!activeCs) return null;
+          const c1=Math.min(palSelStart.col,palSelEnd.col),c2=Math.max(palSelStart.col,palSelEnd.col);
+          const r1=Math.min(palSelStart.row,palSelEnd.row),r2=Math.max(palSelStart.row,palSelEnd.row);
+          const w=c2-c1+1,h=r2-r1+1;
+          if(w===1&&h===1) return null;
+          const tiles=[];
+          for(let r=r1;r<=r2;r++){const row=[];for(let c=c1;c<=c2;c++){row.push(encodeTile(activeChipsetIdx,r*activeCs.cols+c+1));}tiles.push(row);}
+          return{w,h,tiles};
+        })();
+        const {chipIdx:selChipIdx,tileIdx:selTileIdx}=decodeTile(selTile);
+        const LAYER_NAMES=['地面','装飾','建物','上層'];
+        const LAYER_COLORS=['#22c55e','#3b82f6','#f59e0b','#a855f7'];
+        const LEFT_W=220;
+        const palW=palCols*PAL_TILE+palCols+12; // tiles + gaps + padding
+
+        // No chipsets: show initial loader
+        if(tilesets.length===0){
+          return(
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <div style={{textAlign:'center',color:'#64748b',maxWidth:400}}>
+              <div style={{fontSize:36,marginBottom:8}}>🖼</div>
+              <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>画像オーバーレイ</div>
+              <div style={{fontSize:12,marginBottom:16}}>タイルセット画像を追加してください</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8,alignItems:'center'}}>
+                <label style={{padding:'8px 20px',background:'#3b82f6',color:'#fff',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                  画像ファイルを選択
+                  <input type="file" accept="image/*" onChange={e=>{
+                    const f=e.target.files[0];if(!f)return;
+                    const tw=+(document.getElementById('tsW')?.value)||48;
+                    const th=+(document.getElementById('tsH')?.value)||48;
+                    addChipset(f,tw,th);
+                  }} style={{display:'none'}}/>
+                </label>
+                <div style={{display:'flex',gap:6,alignItems:'center',fontSize:11}}>
+                  <span style={{color:'#64748b'}}>タイルサイズ:</span>
+                  <input type="number" id="tsW" defaultValue={48} min={8} max={128} style={{...iS,width:45,textAlign:'center'}}/>
+                  <span style={{color:'#64748b'}}>×</span>
+                  <input type="number" id="tsH" defaultValue={48} min={8} max={128} style={{...iS,width:45,textAlign:'center'}}/>
+                </div>
+                <div style={{fontSize:10,color:'#475569',marginTop:4}}>※ 画像なしでもコアデータの編集は可能です</div>
+              </div>
+            </div>
+          </div>
+          );
+        }
+
+        return(
+        <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden'}}>
+
+          {/* ━━ 上部: マップ描画エリア ━━ */}
+          <div style={{flex:1,minHeight:120,overflow:'auto',background:'#0f172a'}}
+            onWheel={e=>{e.preventDefault();setTileSize(prev=>{const idx=TILE_SIZES.indexOf(prev);if(e.deltaY<0) return idx<TILE_SIZES.length-1?TILE_SIZES[idx+1]:prev;if(e.deltaY>0) return idx>0?TILE_SIZES[idx-1]:prev;return prev;});}}
+            onMouseUp={()=>setPainting(false)} onMouseLeave={()=>{setPainting(false);setHovCell(null);}}>
+            <div style={{width:cols*tileSize,height:rows*tileSize,position:'relative',cursor:'crosshair',userSelect:'none',margin:8}}
+              onMouseDown={e=>{e.preventDefault();if(e.button===0) setPainting(true)}}
+              onContextMenu={e=>e.preventDefault()}>
+              {/* Core data layer */}
+              {Array.from({length:rows},(_,y)=>Array.from({length:cols},(_,x)=>{
+                const tt=terrains[terrain[y]?.[x]]||terrains[0]||{color:'#333'};
+                return(
+                <div key={`c-${x}-${y}`}
+                  onMouseDown={e=>{
+                    e.preventDefault();
+                    if(e.button===0) paintOverlayCell(x,y);
+                    if(e.button===2) spoitTile(x,y);
+                  }}
+                  onMouseEnter={()=>{if(painting) paintOverlayCell(x,y);setHovCell({x,y});}}
+                  onContextMenu={e=>e.preventDefault()}
+                  style={{position:'absolute',left:x*tileSize,top:y*tileSize,width:tileSize,height:tileSize,
+                    background:tt.color,opacity:coreOpacity,
+                    borderRight:showGrid?'1px solid rgba(0,0,0,0.15)':'none',
+                    borderBottom:showGrid?'1px solid rgba(0,0,0,0.15)':'none',
+                    zIndex:0}}>
+                </div>
+                );
+              })).flat()}
+              {/* Canvas overlay */}
+              <canvas ref={overlayCanvasRef}
+                width={cols*tileSize} height={rows*tileSize}
+                style={{position:'absolute',left:0,top:0,width:cols*tileSize,height:rows*tileSize,
+                  pointerEvents:'none',zIndex:1,imageRendering:'pixelated'}}/>
+              {/* Hover highlight */}
+              {hovCell&&(
+                selTileRect?(
+                  <div style={{position:'absolute',left:hovCell.x*tileSize,top:hovCell.y*tileSize,
+                    width:Math.min(selTileRect.w,cols-hovCell.x)*tileSize,
+                    height:Math.min(selTileRect.h,rows-hovCell.y)*tileSize,
+                    outline:'2px solid rgba(245,158,11,0.7)',
+                    outlineOffset:'-2px',pointerEvents:'none',zIndex:8}}/>
+                ):(
+                  <div style={{position:'absolute',left:hovCell.x*tileSize,top:hovCell.y*tileSize,
+                    width:tileSize,height:tileSize,outline:'2px solid rgba(255,255,255,0.5)',
+                    outlineOffset:'-2px',pointerEvents:'none',zIndex:8}}/>
+                )
+              )}
+              {/* Markers */}
+              {Array.from({length:rows},(_,y)=>Array.from({length:cols},(_,x)=>{
+                const en=showEnemyMarkers?enemies.find(e=>e.x===x&&e.y===y):null;
+                const ib=showItemMarkers?itemBoxes.find(b=>b.x===x&&b.y===y):null;
+                const isDZ=showDeployMarkers&&deployZone[y]?.[x];
+                const zoneHere=showDeployMarkers?Object.entries(zones).filter(([zid,cells])=>cells.some(c=>c.x===x&&c.y===y)):[];
+                const enTmpl=en?enemyTemplates.find(t=>t.name===en.template):null;
+                if(!en&&!ib&&!isDZ&&zoneHere.length===0) return null;
+                return(
+                <div key={`mk-${x}-${y}`} style={{position:'absolute',left:x*tileSize,top:y*tileSize,width:tileSize,height:tileSize,pointerEvents:'none',zIndex:6}}>
+                  {isDZ&&<div style={{position:'absolute',inset:1,borderRadius:2,background:'rgba(59,130,246,0.2)',border:'1px solid rgba(59,130,246,0.35)'}}/>}
+                  {zoneHere.length>0&&<div style={{position:'absolute',inset:1,borderRadius:2,background:'rgba(34,197,94,0.2)',border:'1px solid rgba(34,197,94,0.4)'}}/>}
+                  {ib&&!en&&<div style={{position:'absolute',inset:2,borderRadius:4,background:'rgba(212,160,23,0.7)',
+                    display:'flex',alignItems:'center',justifyContent:'center',
+                    border:'1px solid rgba(212,160,23,0.9)'}}>
+                    <span style={{fontSize:tileSize<30?6:8,color:'#fff',fontWeight:700,textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>📦</span>
+                  </div>}
+                  {en&&enTmpl&&<div style={{position:'absolute',inset:2,borderRadius:4,
+                    background:enTmpl.color||'#dc2626',opacity:0.9,
+                    display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                    border:'2px solid rgba(0,0,0,0.3)',textShadow:'0 1px 2px rgba(0,0,0,0.5)',overflow:'hidden'}}>
+                    <div style={{fontSize:tileSize<30?6:tileSize<34?7:9,fontWeight:700,color:'#fff',lineHeight:1}}>{en.template}</div>
+                    <div style={{fontSize:tileSize<30?5:7,color:'rgba(255,255,255,0.7)',lineHeight:1,marginTop:1}}>{MOVEMENTS.find(m=>m.id===(en.ai?.movement||'rush'))?.short}{ACTIONS.find(a=>a.id===(en.ai?.action||'attack'))?.short}</div>
+                  </div>}
+                </div>
+                );
+              })).flat()}
+            </div>
+          </div>
+
+          {/* ━━ リサイズハンドル ━━ */}
+          <div
+            style={{height:6,background:'#334155',cursor:'row-resize',flexShrink:0,
+              display:'flex',alignItems:'center',justifyContent:'center'}}
+            onMouseDown={e=>{
+              e.preventDefault();
+              const startY=e.clientY;
+              const startH=bottomH;
+              const onMove=ev=>{
+                const delta=startY-ev.clientY;
+                setBottomH(Math.max(160,Math.min(600,startH+delta)));
+              };
+              const onUp=()=>{document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);};
+              document.addEventListener('mousemove',onMove);
+              document.addEventListener('mouseup',onUp);
+            }}>
+            <div style={{width:40,height:2,background:'#64748b',borderRadius:1}}/>
+          </div>
+
+          {/* ━━ 下部パネル ━━ */}
+          <div style={{height:bottomH,flexShrink:0,background:'#1e293b',display:'flex',overflow:'hidden'}}>
+
+            {/* ── 左: 操作パネル ── */}
+            <div style={{width:LEFT_W,flexShrink:0,padding:'8px 10px',display:'flex',flexDirection:'column',gap:4,overflowY:'auto',borderRight:'1px solid #334155'}}>
+
+              {/* Chipset tabs */}
+              <div style={{fontSize:9,color:'#64748b'}}>チップセット</div>
+              <div style={{display:'flex',alignItems:'center',gap:3,flexWrap:'wrap'}}>
+                {tilesets.map((cs,ci)=>{
+                  const isAct=ci===activeChipsetIdx;
+                  return(
+                  <button key={ci} onClick={()=>{setActiveChipsetIdx(ci);setPalSelStart(null);setPalSelEnd(null);}}
+                    style={{padding:'3px 8px',fontSize:10,fontWeight:isAct?700:400,
+                      background:isAct?'#334155':'transparent',color:isAct?'#e2e8f0':'#94a3b8',
+                      border:isAct?'1px solid #475569':'1px solid transparent',borderRadius:3,cursor:'pointer'}}>
+                    {ci}{!cs.dataUrl?' ⚠':''}
+                  </button>
+                  );
+                })}
+                <label style={{padding:'3px 7px',fontSize:10,background:'#334155',color:'#94a3b8',borderRadius:3,cursor:'pointer'}}>
+                  +<input type="file" accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;addChipset(f,48,48);}} style={{display:'none'}}/>
+                </label>
+              </div>
+
+              {/* Active chipset controls */}
+              {activeCs&&(
+              <div style={{display:'flex',gap:4,alignItems:'center',fontSize:10,color:'#94a3b8'}}>
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{activeCs.src||'--'}</span>
+                <label style={{padding:'2px 6px',background:'#334155',borderRadius:3,cursor:'pointer',flexShrink:0}}>
+                  {activeCs.dataUrl?'再読込':'読込'}
+                  <input type="file" accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;reloadChipsetImage(activeChipsetIdx,f);}} style={{display:'none'}}/>
+                </label>
+                <button onClick={()=>removeChipset(activeChipsetIdx)}
+                  style={{background:'none',border:'none',color:'#ef4444',fontSize:10,cursor:'pointer',padding:'2px 4px'}}>✕</button>
+              </div>
+              )}
+
+              {/* Layer selector */}
+              <div style={{fontSize:9,color:'#64748b',marginTop:4}}>レイヤー</div>
+              <div style={{display:'flex',gap:2}}>
+                {LAYER_NAMES.map((name,li)=>{
+                  const isActive=activeLayer===li;
+                  const isVisible=layerVisible[li];
+                  return(
+                  <button key={li}
+                    onClick={()=>setActiveLayer(li)}
+                    onContextMenu={e=>{e.preventDefault();if(li!==activeLayer) setLayerVisible(prev=>{const n=[...prev];n[li]=!n[li];return n;});}}
+                    style={{flex:1,padding:'4px 0',fontSize:10,fontWeight:isActive?700:400,
+                      background:isActive?'#334155':'transparent',
+                      color:isActive?LAYER_COLORS[li]:(isVisible?'#94a3b8':'#475569'),
+                      border:isActive?`1px solid ${LAYER_COLORS[li]}`:'1px solid #475569',
+                      borderRadius:3,cursor:'pointer',textAlign:'center',opacity:isVisible||isActive?1:0.4}}>
+                    {name}
+                  </button>
+                  );
+                })}
+              </div>
+              <div style={{fontSize:9,color:'#475569'}}>L{activeLayer}　右クリック=表示切替</div>
+
+              {/* Eraser + selected tile info */}
+              <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                <button onClick={()=>setSelTile(0)}
+                  style={{padding:'4px 10px',fontSize:10,fontWeight:selTile===0?700:400,
+                    background:selTile===0?'#475569':'#334155',color:selTile===0?'#fff':'#94a3b8',
+                    border:'1px solid #475569',borderRadius:3,cursor:'pointer'}}>
+                  🗑 消しゴム
+                </button>
+                <span style={{fontSize:9,color:'#64748b'}}>
+                  {selTileIdx>0?`CS${selChipIdx} #${selTileIdx}`:''}
+                </span>
+              </div>
+
+              {/* Opacity */}
+              <div style={{fontSize:9,color:'#64748b',marginTop:4}}>透明度</div>
+              <div style={{fontSize:9,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
+                <span style={{width:40}}>地形</span>
+                <input type="range" min={0} max={100} step={5} value={Math.round(coreOpacity*100)}
+                  onChange={e=>setCoreOpacity(+e.target.value/100)}
+                  style={{flex:1,height:14}}/>
+                <span style={{width:24,textAlign:'right',fontSize:9}}>{Math.round(coreOpacity*100)}</span>
+              </div>
+              <div style={{fontSize:9,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
+                <span style={{width:40}}>タイル</span>
+                <input type="range" min={0} max={100} step={5} value={Math.round(overlayOpacity*100)}
+                  onChange={e=>setOverlayOpacity(+e.target.value/100)}
+                  style={{flex:1,height:14}}/>
+                <span style={{width:24,textAlign:'right',fontSize:9}}>{Math.round(overlayOpacity*100)}</span>
+              </div>
+
+              {/* Display toggles */}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',fontSize:9,color:'#94a3b8',marginTop:2}}>
+                <label style={{display:'flex',alignItems:'center',gap:3,cursor:'pointer'}}>
+                  <input type="checkbox" checked={showEnemyMarkers} onChange={e=>setShowEnemyMarkers(e.target.checked)} style={{width:11,height:11}}/> 敵
+                </label>
+                <label style={{display:'flex',alignItems:'center',gap:3,cursor:'pointer'}}>
+                  <input type="checkbox" checked={showItemMarkers} onChange={e=>setShowItemMarkers(e.target.checked)} style={{width:11,height:11}}/> 箱
+                </label>
+                <label style={{display:'flex',alignItems:'center',gap:3,cursor:'pointer'}}>
+                  <input type="checkbox" checked={showDeployMarkers} onChange={e=>setShowDeployMarkers(e.target.checked)} style={{width:11,height:11}}/> 配置
+                </label>
+                <label style={{display:'flex',alignItems:'center',gap:3,cursor:'pointer'}}>
+                  <input type="checkbox" checked={showGrid} onChange={e=>setShowGrid(e.target.checked)} style={{width:11,height:11}}/> 格子
+                </label>
+              </div>
+
+              {/* Info */}
+              <div style={{marginTop:'auto',paddingTop:4,borderTop:'1px solid #334155',fontSize:9,color:'#475569'}}>
+                {cols}×{rows} CS:{tilesets.length} Zoom:{tileSize}px
+              </div>
+            </div>
+
+            {/* ── 右: タイルパレット ── */}
+            <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              {activeCs&&activeCs.dataUrl?(
+              <React.Fragment>
+                {/* Palette header */}
+                <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 8px',borderBottom:'1px solid #334155',flexShrink:0}}>
+                  <span style={{fontSize:10,color:'#94a3b8'}}>
+                    CS{activeChipsetIdx}: {activeCs.src} ({activeCs.cols}×{activeCs.rows}, {activeCs.tileW}×{activeCs.tileH}px)
+                  </span>
+                  <span style={{marginLeft:'auto'}}/>
+                  <span style={{fontSize:9,color:'#64748b'}}>表示列:</span>
+                  {[8,16].map(n=>(
+                    <button key={n} onClick={()=>setPalCols(n)}
+                      style={{padding:'2px 8px',fontSize:10,fontWeight:palCols===n?700:400,
+                        background:palCols===n?'#475569':'#334155',color:palCols===n?'#fff':'#94a3b8',
+                        border:'1px solid #475569',borderRadius:3,cursor:'pointer'}}>
+                      {n}列
+                    </button>
+                  ))}
+                </div>
+                {/* Palette grid - fixed column count */}
+                <div style={{flex:1,overflow:'auto',padding:6}}
+                  onMouseUp={()=>setPalDragging(false)}
+                  onMouseLeave={()=>setPalDragging(false)}>
+                  <div style={{display:'grid',gridTemplateColumns:`repeat(${palCols}, ${PAL_TILE}px)`,gap:1,justifyContent:'start'}}>
+                    {Array.from({length:totalTiles},(_,i)=>{
+                      const tIdx=i+1;
+                      const encoded=encodeTile(activeChipsetIdx,tIdx);
+                      const palCol=(tIdx-1)%activeCs.cols;
+                      const palRow=Math.floor((tIdx-1)/activeCs.cols);
+                      const tx=palCol*activeCs.tileW;
+                      const ty=palRow*activeCs.tileH;
+                      const inRect=palSelStart&&palSelEnd&&(()=>{
+                        const c1=Math.min(palSelStart.col,palSelEnd.col),c2=Math.max(palSelStart.col,palSelEnd.col);
+                        const r1=Math.min(palSelStart.row,palSelEnd.row),r2=Math.max(palSelStart.row,palSelEnd.row);
+                        return palCol>=c1&&palCol<=c2&&palRow>=r1&&palRow<=r2;
+                      })();
+                      return(
+                        <div key={tIdx}
+                          onMouseDown={e=>{
+                            e.preventDefault();
+                            setPalSelStart({col:palCol,row:palRow});
+                            setPalSelEnd({col:palCol,row:palRow});
+                            setPalDragging(true);
+                            setSelTile(encoded);
+                          }}
+                          onMouseEnter={()=>{if(palDragging) setPalSelEnd({col:palCol,row:palRow});}}
+                          onMouseUp={()=>{
+                            setPalDragging(false);
+                            if(palSelStart?.col===palCol&&palSelStart?.row===palRow){
+                              setPalSelStart(null);setPalSelEnd(null);
+                            }
+                          }}
+                          style={{width:PAL_TILE,height:PAL_TILE,cursor:'pointer',
+                            backgroundImage:`url(${activeCs.dataUrl})`,
+                            backgroundPosition:`-${tx*(PAL_TILE/activeCs.tileW)}px -${ty*(PAL_TILE/activeCs.tileH)}px`,
+                            backgroundSize:`${activeCs.cols*PAL_TILE}px auto`,
+                            border:inRect?'2px solid #f59e0b':selTile===encoded?'2px solid #3b82f6':'1px solid #334155',
+                            borderRadius:1,flexShrink:0,imageRendering:'pixelated'}}/>
+                      );
+                    })}
+                  </div>
+                </div>
+              </React.Fragment>
+              ):(
+              <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#475569',fontSize:11}}>
+                {activeCs?'画像を読み込んでください':'チップセットを追加してください'}
+              </div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* ── Tab 3: Event Editor ── */}
+      {activeTab===2&&(()=>{
+        const selEvt=selectedEvent?events.find(e=>e.id===selectedEvent):null;
+        const triggerSummary=(tr)=>{
+          if(!tr)return'';
+          switch(tr.type){
+            case'turn':return`turn T${tr.turn||1}/${tr.phase||'enemy'}`;
+            case'turnEnd':return`turnEnd T${tr.turn||1}/${tr.phase||'enemy'}`;
+            case'defeat':return`defeat ${tr.targetId||'?'}`;
+            case'defeatGroup':return`defeatGroup ${tr.group||'?'}`;
+            case'defeatCount':return`defeatCount ${tr.count||0}`;
+            case'arrive':return`arrive zone:${tr.zoneId||'?'}`;
+            case'hpBelow':return`hpBelow ${tr.targetId||'?'} ${tr.hpPct||50}%`;
+            case'flag':return`flag ${tr.flag||'?'}=${tr.value??'true'}`;
+            case'mapStart':return'mapStart';
+            case'custom':return'custom';
+            default:return tr.type;
+          }
+        };
+        const triggerTypes=[
+          {id:'turn',name:'ターン開始'},{id:'turnEnd',name:'ターン終了'},
+          {id:'defeat',name:'撃破'},{id:'defeatGroup',name:'グループ全滅'},
+          {id:'defeatCount',name:'撃破数'},{id:'arrive',name:'到達'},
+          {id:'hpBelow',name:'HP低下'},{id:'flag',name:'フラグ'},
+          {id:'mapStart',name:'マップ開始'},{id:'custom',name:'カスタム'}
+        ];
+        const condTypes=[
+          {id:'none',name:'なし（無条件）'},{id:'flag',name:'フラグ条件'},
+          {id:'probability',name:'確率'},{id:'unitStat',name:'ユニットステータス'},
+          {id:'allyCount',name:'味方数'},{id:'enemyCount',name:'敵数'},
+          {id:'unitAlive',name:'ユニット生存'},{id:'unitDead',name:'ユニット撃破済み'}
+        ];
+        const actionTypes=[
+          {id:'spawn',name:'増援出現'},{id:'despawn',name:'ユニット消滅'},
+          {id:'dialogue',name:'会話'},{id:'terrainChange',name:'地形変更'},
+          {id:'objective',name:'勝敗判定'},{id:'setFlag',name:'フラグ設定'},
+          {id:'bgm',name:'BGM変更'},{id:'camera',name:'カメラ移動'},
+          {id:'changeAI',name:'AI変更'}
+        ];
+        const changeTriggerType=(newType)=>{
+          const defaults={
+            turn:{type:'turn',turn:1,phase:'enemy'},
+            turnEnd:{type:'turnEnd',turn:1,phase:'enemy'},
+            defeat:{type:'defeat',targetId:''},
+            defeatGroup:{type:'defeatGroup',group:''},
+            defeatCount:{type:'defeatCount',count:1},
+            arrive:{type:'arrive',who:'player',zoneId:''},
+            hpBelow:{type:'hpBelow',targetId:'',hpPct:50},
+            flag:{type:'flag',flag:'',value:'true'},
+            mapStart:{type:'mapStart'},
+            custom:{type:'custom',expr:''},
+          };
+          updateEvent(selectedEvent,{trigger:defaults[newType]||{type:newType}});
+        };
+        const addCond=(type)=>{
+          const defaults={
+            flag:{type:'flag',flag:'',value:'true'},
+            probability:{type:'probability',mode:'fixed',value:50},
+            unitStat:{type:'unitStat',targetId:'',stat:'int',op:'>=',value:10},
+            allyCount:{type:'allyCount',op:'<=',value:3},
+            enemyCount:{type:'enemyCount',op:'<=',value:0},
+            unitAlive:{type:'unitAlive',targetId:''},
+            unitDead:{type:'unitDead',targetId:''},
+          };
+          const newCond=defaults[type]||{type};
+          const cur=selEvt.conditions||[];
+          updateEvent(selectedEvent,{conditions:[...cur,newCond]});
+        };
+        const removeCond=(ci)=>{
+          const cur=(selEvt.conditions||[]).filter((_,i)=>i!==ci);
+          updateEvent(selectedEvent,{conditions:cur.length>0?cur:null});
+        };
+        const updateCondAt=(ci,updates)=>{
+          const cur=[...(selEvt.conditions||[])];
+          cur[ci]={...cur[ci],...updates};
+          updateEvent(selectedEvent,{conditions:cur});
+        };
+        const updateTrigger=(updates)=>{
+          if(!selEvt)return;
+          updateEvent(selectedEvent,{trigger:{...selEvt.trigger,...updates}});
+        };
+
+        const cardS={background:'#1e293b',border:'1px solid #334155',borderRadius:6,padding:10,marginBottom:8};
+        const secH={fontSize:12,fontWeight:700,color:'#94a3b8',marginBottom:6};
+        const rowS={display:'flex',alignItems:'center',gap:6,marginBottom:4};
+        const fLbl={fontSize:10,color:'#64748b',minWidth:50,flexShrink:0};
+        const smBtn=(bg,c)=>({padding:'3px 8px',fontSize:10,fontWeight:600,background:bg,color:c,border:'none',borderRadius:3,cursor:'pointer'});
+
+        return(
+        <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+          {/* datalists */}
+          <datalist id="dl-enemy-ids">{enemyIds.map(id=><option key={id} value={id}/>)}</datalist>
+          <datalist id="dl-enemy-groups">{enemyGroups.map(g=><option key={g} value={g}/>)}</datalist>
+
+          {/* Left: Event List */}
+          <div style={{width:200,background:'#1e293b',borderRight:'1px solid #334155',display:'flex',flexDirection:'column',flexShrink:0,overflow:'hidden'}}>
+            <div style={{padding:'10px 10px 6px',borderBottom:'1px solid #334155'}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#e2e8f0',marginBottom:6}}>イベント</div>
+              <button onClick={addEvent} style={{width:'100%',padding:'5px',fontSize:11,fontWeight:600,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer'}}>+ 追加</button>
+            </div>
+            <div style={{flex:1,overflowY:'auto',padding:4}}>
+              {events.map((ev,idx)=>(
+                <div key={ev.id} onClick={()=>setSelectedEvent(ev.id)}
+                  style={{padding:'6px 8px',marginBottom:2,borderRadius:4,cursor:'pointer',
+                    background:selectedEvent===ev.id?'rgba(59,130,246,0.2)':'transparent',
+                    border:selectedEvent===ev.id?'1px solid rgba(59,130,246,0.4)':'1px solid transparent'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <span style={{fontSize:9,color:'#475569'}}>{ev.id}</span>
+                    <div style={{marginLeft:'auto',display:'flex',gap:2}}>
+                      <button onClick={e=>{e.stopPropagation();moveEvent(ev.id,-1);}} disabled={idx===0}
+                        style={{...smBtn('#334155',idx===0?'#334155':'#94a3b8'),padding:'1px 4px',fontSize:9}}>↑</button>
+                      <button onClick={e=>{e.stopPropagation();moveEvent(ev.id,1);}} disabled={idx===events.length-1}
+                        style={{...smBtn('#334155',idx===events.length-1?'#334155':'#94a3b8'),padding:'1px 4px',fontSize:9}}>↓</button>
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ev.name||'(無名)'}</div>
+                  <div style={{fontSize:9,color:'#64748b',marginTop:1}}>{triggerSummary(ev.trigger)}</div>
+                </div>
+              ))}
+              {events.length===0&&<div style={{fontSize:10,color:'#475569',textAlign:'center',padding:16}}>イベントなし</div>}
+            </div>
+          </div>
+
+          {/* Right: Event Detail */}
+          <div style={{flex:1,overflowY:'auto',background:'#0f172a',padding:16}}>
+            {!selEvt?(
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#475569',fontSize:13}}>
+                イベントを選択または追加してください
+              </div>
+            ):(
+              <div style={{maxWidth:700}}>
+                {/* Header */}
+                <div style={cardS}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                    <span style={{fontSize:13,fontWeight:700,color:'#e2e8f0'}}>イベント: {selEvt.id}</span>
+                    <button onClick={()=>removeEvent(selEvt.id)} style={smBtn('rgba(239,68,68,0.2)','#fca5a5')}>削除</button>
+                  </div>
+                  <div style={rowS}>
+                    <span style={fLbl}>名前:</span>
+                    <input value={selEvt.name} onChange={e=>updateEvent(selectedEvent,{name:e.target.value})}
+                      style={{...iS,flex:1}}/>
+                  </div>
+                  <div style={rowS}>
+                    <span style={fLbl}>1回のみ:</span>
+                    <input type="checkbox" checked={selEvt.once} onChange={e=>updateEvent(selectedEvent,{once:e.target.checked})}/>
+                  </div>
+                </div>
+
+                {/* Trigger */}
+                <div style={cardS}>
+                  <div style={secH}>トリガー</div>
+                  <div style={rowS}>
+                    <span style={fLbl}>タイプ:</span>
+                    <select value={selEvt.trigger.type} onChange={e=>changeTriggerType(e.target.value)}
+                      style={{...iS,flex:1,cursor:'pointer'}}>
+                      {triggerTypes.map(t=><option key={t.id} value={t.id}>{t.name} ({t.id})</option>)}
+                    </select>
+                  </div>
+                  {(selEvt.trigger.type==='turn'||selEvt.trigger.type==='turnEnd')&&(<>
+                    <div style={rowS}>
+                      <span style={fLbl}>ターン:</span>
+                      <input type="number" value={selEvt.trigger.turn||1} min={1}
+                        onChange={e=>updateTrigger({turn:+e.target.value})} style={{...iS,width:50}}/>
+                      <span style={fLbl}>フェーズ:</span>
+                      <select value={selEvt.trigger.phase||'enemy'} onChange={e=>updateTrigger({phase:e.target.value})}
+                        style={{...iS,width:80,cursor:'pointer'}}>
+                        <option value="player">player</option><option value="enemy">enemy</option>
+                      </select>
+                    </div>
+                  </>)}
+                  {selEvt.trigger.type==='defeat'&&(
+                    <div style={rowS}>
+                      <span style={fLbl}>対象ID:</span>
+                      <input list="dl-enemy-ids" value={selEvt.trigger.targetId||''}
+                        onChange={e=>updateTrigger({targetId:e.target.value})} style={{...iS,flex:1}}/>
+                    </div>
+                  )}
+                  {selEvt.trigger.type==='defeatGroup'&&(
+                    <div style={rowS}>
+                      <span style={fLbl}>グループ:</span>
+                      <input list="dl-enemy-groups" value={selEvt.trigger.group||''}
+                        onChange={e=>updateTrigger({group:e.target.value})} style={{...iS,flex:1}}/>
+                    </div>
+                  )}
+                  {selEvt.trigger.type==='defeatCount'&&(
+                    <div style={rowS}>
+                      <span style={fLbl}>撃破数:</span>
+                      <input type="number" value={selEvt.trigger.count||1} min={1}
+                        onChange={e=>updateTrigger({count:+e.target.value})} style={{...iS,width:60}}/>
+                    </div>
+                  )}
+                  {selEvt.trigger.type==='arrive'&&(<>
+                    <div style={rowS}>
+                      <span style={fLbl}>対象:</span>
+                      <select value={selEvt.trigger.who||'player'} onChange={e=>updateTrigger({who:e.target.value})}
+                        style={{...iS,width:80,cursor:'pointer'}}>
+                        <option value="player">player</option><option value="any">any</option>
+                      </select>
+                    </div>
+                    <div style={rowS}>
+                      <span style={fLbl}>ゾーン:</span>
+                      <select value={selEvt.trigger.zoneId||''} onChange={e=>updateTrigger({zoneId:e.target.value})}
+                        style={{...iS,flex:1,cursor:'pointer'}}>
+                        <option value="">-- 選択 --</option>
+                        {Object.keys(zones).map(zid=><option key={zid} value={zid}>{zid} ({(zones[zid]||[]).length}マス)</option>)}
+                      </select>
+                    </div>
+                  </>)}
+                  {selEvt.trigger.type==='flag'&&(<>
+                    <div style={rowS}>
+                      <span style={fLbl}>フラグ名:</span>
+                      <input value={selEvt.trigger.flag||''} onChange={e=>updateTrigger({flag:e.target.value})} style={{...iS,flex:1}}/>
+                    </div>
+                    <div style={rowS}>
+                      <span style={fLbl}>値:</span>
+                      <input value={selEvt.trigger.value??'true'} onChange={e=>updateTrigger({value:e.target.value})} style={{...iS,flex:1}}/>
+                    </div>
+                  </>)}
+                  {selEvt.trigger.type==='hpBelow'&&(
+                    <div style={rowS}>
+                      <span style={fLbl}>対象ID:</span>
+                      <input list="dl-enemy-ids" value={selEvt.trigger.targetId||''}
+                        onChange={e=>updateTrigger({targetId:e.target.value})} style={{...iS,width:100}}/>
+                      <span style={fLbl}>HP%:</span>
+                      <input type="number" value={selEvt.trigger.hpPct||50} min={1} max={100}
+                        onChange={e=>updateTrigger({hpPct:+e.target.value})} style={{...iS,width:50}}/>
+                    </div>
+                  )}
+                  {selEvt.trigger.type==='custom'&&(
+                    <div style={rowS}>
+                      <span style={fLbl}>式:</span>
+                      <input value={selEvt.trigger.expr||''} onChange={e=>updateTrigger({expr:e.target.value})}
+                        style={{...iS,flex:1}} placeholder="将来用"/>
+                    </div>
+                  )}
+                </div>
+
+                {/* Conditions (array, AND) */}
+                <div style={cardS}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                    <div style={secH}>追加条件 ({(selEvt.conditions||[]).length}) <span style={{fontWeight:400,fontSize:10}}>AND結合</span></div>
+                    <select onChange={e=>{if(e.target.value){addCond(e.target.value);e.target.value='';}}}
+                      style={{...iS,width:130,cursor:'pointer',fontSize:10}} defaultValue="">
+                      <option value="" disabled>+ 条件追加...</option>
+                      {condTypes.filter(c=>c.id!=='none').map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  {(selEvt.conditions||[]).length===0&&<div style={{fontSize:10,color:'#475569',textAlign:'center',padding:4}}>無条件</div>}
+                  {(selEvt.conditions||[]).map((cond,ci)=>{
+                    const cName=condTypes.find(c=>c.id===cond.type)?.name||cond.type;
+                    return(
+                    <div key={ci} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:4,padding:8,marginBottom:4}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                        <span style={{fontSize:10,fontWeight:700,color:'#94a3b8'}}>[{ci+1}] {cName}</span>
+                        <button onClick={()=>removeCond(ci)} style={smBtn('rgba(239,68,68,0.2)','#fca5a5')}>×</button>
+                      </div>
+
+                      {cond.type==='flag'&&(<>
+                        <div style={rowS}>
+                          <span style={fLbl}>フラグ名:</span>
+                          <input value={cond.flag||''} onChange={e=>updateCondAt(ci,{flag:e.target.value})} style={{...iS,flex:1}}/>
+                        </div>
+                        <div style={rowS}>
+                          <span style={fLbl}>値:</span>
+                          <input value={cond.value??''} onChange={e=>updateCondAt(ci,{value:e.target.value})} style={{...iS,flex:1}}/>
+                        </div>
+                      </>)}
+
+                      {cond.type==='probability'&&(<>
+                        <div style={rowS}>
+                          <span style={fLbl}>モード:</span>
+                          <select value={cond.mode||'fixed'} onChange={e=>updateCondAt(ci,{mode:e.target.value})}
+                            style={{...iS,width:100,cursor:'pointer'}}>
+                            <option value="fixed">固定%</option>
+                            <option value="statMult">ステ×倍率</option>
+                          </select>
+                        </div>
+                        {cond.mode==='fixed'&&(
+                          <div style={rowS}>
+                            <span style={fLbl}>確率%:</span>
+                            <input type="number" value={cond.value??50} min={0} max={100}
+                              onChange={e=>updateCondAt(ci,{value:+e.target.value})} style={{...iS,width:60}}/>
+                          </div>
+                        )}
+                        {cond.mode==='statMult'&&(<>
+                          <div style={rowS}>
+                            <span style={fLbl}>対象:</span>
+                            <input list="dl-enemy-ids" value={cond.targetId||''} placeholder="空=トリガー元"
+                              onChange={e=>updateCondAt(ci,{targetId:e.target.value})} style={{...iS,width:100}}/>
+                            <span style={fLbl}>ステ:</span>
+                            <select value={cond.stat||'int'} onChange={e=>updateCondAt(ci,{stat:e.target.value})}
+                              style={{...iS,width:60,cursor:'pointer'}}>
+                              {['hp','str','def','int','mov'].map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}
+                            </select>
+                          </div>
+                          <div style={rowS}>
+                            <span style={fLbl}>×倍率:</span>
+                            <input type="number" value={cond.mult??1} min={0} step={0.1}
+                              onChange={e=>updateCondAt(ci,{mult:+e.target.value})} style={{...iS,width:60}}/>
+                            <span style={{fontSize:9,color:'#64748b'}}>= 確率%</span>
+                          </div>
+                        </>)}
+                      </>)}
+
+                      {cond.type==='unitStat'&&(<>
+                        <div style={rowS}>
+                          <span style={fLbl}>対象ID:</span>
+                          <input list="dl-enemy-ids" value={cond.targetId||''}
+                            onChange={e=>updateCondAt(ci,{targetId:e.target.value})} style={{...iS,width:100}}/>
+                        </div>
+                        <div style={rowS}>
+                          <span style={fLbl}>ステ:</span>
+                          <select value={cond.stat||'int'} onChange={e=>updateCondAt(ci,{stat:e.target.value})}
+                            style={{...iS,width:60,cursor:'pointer'}}>
+                            {['hp','str','def','int','mov'].map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}
+                          </select>
+                          <select value={cond.op||'>='} onChange={e=>updateCondAt(ci,{op:e.target.value})}
+                            style={{...iS,width:50,cursor:'pointer'}}>
+                            <option value=">=">{'>='}</option><option value="<=">{'<='}</option>
+                            <option value=">">{'>'}</option><option value="<">{'<'}</option>
+                            <option value="==">{'=='}</option><option value="!=">{'!='}</option>
+                          </select>
+                          <input type="number" value={cond.value??10}
+                            onChange={e=>updateCondAt(ci,{value:+e.target.value})} style={{...iS,width:50}}/>
+                        </div>
+                      </>)}
+
+                      {(cond.type==='allyCount'||cond.type==='enemyCount')&&(
+                        <div style={rowS}>
+                          <span style={fLbl}>比較:</span>
+                          <select value={cond.op||'<='} onChange={e=>updateCondAt(ci,{op:e.target.value})}
+                            style={{...iS,width:60,cursor:'pointer'}}>
+                            <option value="<=">{'<='}</option><option value=">=">{'≥'}</option>
+                            <option value="<">{'<'}</option><option value=">">{'>'}</option>
+                            <option value="==">{'=='}</option>
+                          </select>
+                          <span style={fLbl}>値:</span>
+                          <input type="number" value={cond.value??0}
+                            onChange={e=>updateCondAt(ci,{value:+e.target.value})} style={{...iS,width:50}}/>
+                        </div>
+                      )}
+
+                      {(cond.type==='unitAlive'||cond.type==='unitDead')&&(
+                        <div style={rowS}>
+                          <span style={fLbl}>対象ID:</span>
+                          <input list="dl-enemy-ids" value={cond.targetId||''}
+                            onChange={e=>updateCondAt(ci,{targetId:e.target.value})} style={{...iS,flex:1}}/>
+                        </div>
+                      )}
+                    </div>
+                    );
+                  })}
+                </div>
+
+                {/* Actions */}
+                <div style={cardS}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                    <div style={secH}>アクション ({selEvt.actions.length})</div>
+                    <div style={{position:'relative'}}>
+                      <select onChange={e=>{if(e.target.value){addAction(selectedEvent,e.target.value);e.target.value='';}}}
+                        style={{...iS,width:120,cursor:'pointer'}} defaultValue="">
+                        <option value="" disabled>+ 追加...</option>
+                        {actionTypes.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {selEvt.actions.map((act,ai)=>{
+                    const actName=actionTypes.find(a=>a.id===act.type)?.name||act.type;
+                    return(
+                    <div key={ai} style={{background:'#0f172a',border:'1px solid #334155',borderRadius:4,padding:8,marginBottom:6}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                        <span style={{fontSize:11,fontWeight:700,color:'#e2e8f0'}}>[{ai+1}] {actName}</span>
+                        <div style={{display:'flex',gap:3}}>
+                          <button onClick={()=>moveAction(selectedEvent,ai,-1)} disabled={ai===0}
+                            style={{...smBtn('#334155',ai===0?'#334155':'#94a3b8'),padding:'1px 5px',fontSize:9}}>↑</button>
+                          <button onClick={()=>moveAction(selectedEvent,ai,1)} disabled={ai===selEvt.actions.length-1}
+                            style={{...smBtn('#334155',ai===selEvt.actions.length-1?'#334155':'#94a3b8'),padding:'1px 5px',fontSize:9}}>↓</button>
+                          <button onClick={()=>removeAction(selectedEvent,ai)} style={smBtn('rgba(239,68,68,0.2)','#fca5a5')}>×</button>
+                        </div>
+                      </div>
+
+                      {/* spawn */}
+                      {act.type==='spawn'&&(<>
+                        {(act.units||[]).map((u,ui)=>(
+                          <div key={ui} style={{background:'#1e293b',borderRadius:3,padding:6,marginBottom:4}}>
+                            <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                              <span style={{fontSize:9,color:'#64748b'}}>テンプレ:</span>
+                              <select value={u.template||''} onChange={e=>{
+                                const units=[...(act.units||[])];units[ui]={...units[ui],template:e.target.value};
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...iS,width:100,cursor:'pointer',fontSize:10}}>
+                                <option value="">--</option>
+                                {enemyTemplates.map(t=><option key={t.name} value={t.name}>{t.name}</option>)}
+                              </select>
+                              <span style={{fontSize:9,color:'#64748b'}}>x:</span>
+                              <input type="number" value={u.x??0} min={0} onChange={e=>{
+                                const units=[...(act.units||[])];units[ui]={...units[ui],x:+e.target.value};
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...iS,width:35,fontSize:10}}/>
+                              <span style={{fontSize:9,color:'#64748b'}}>y:</span>
+                              <input type="number" value={u.y??0} min={0} onChange={e=>{
+                                const units=[...(act.units||[])];units[ui]={...units[ui],y:+e.target.value};
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...iS,width:35,fontSize:10}}/>
+                              <span style={{fontSize:9,color:'#64748b'}}>移動:</span>
+                              <select value={u.ai?.movement||'rush'} onChange={e=>{
+                                const units=[...(act.units||[])];units[ui]={...units[ui],ai:{...(units[ui].ai||{}),movement:e.target.value}};
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...iS,width:55,cursor:'pointer',fontSize:10}}>
+                                {MOVEMENTS.map(m=><option key={m.id} value={m.id}>{m.short}</option>)}
+                              </select>
+                              <span style={{fontSize:9,color:'#64748b'}}>行動:</span>
+                              <select value={u.ai?.action||'attack'} onChange={e=>{
+                                const units=[...(act.units||[])];units[ui]={...units[ui],ai:{...(units[ui].ai||{}),action:e.target.value}};
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...iS,width:55,cursor:'pointer',fontSize:10}}>
+                                {ACTIONS.map(a=><option key={a.id} value={a.id}>{a.short}</option>)}
+                              </select>
+                              <span style={{fontSize:9,color:'#64748b'}}>Lv:</span>
+                              <input type="number" value={u.level||1} min={1} onChange={e=>{
+                                const units=[...(act.units||[])];units[ui]={...units[ui],level:+e.target.value};
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...iS,width:35,fontSize:10}}/>
+                              <label style={{fontSize:9,color:u.minion!==false?'#60a5fa':'#64748b',display:'flex',alignItems:'center',gap:2,cursor:'pointer'}}>
+                                <input type="checkbox" checked={u.minion!==false} onChange={e=>{
+                                  const units=[...(act.units||[])];units[ui]={...units[ui],minion:e.target.checked};
+                                  updateAction(selectedEvent,ai,{units});
+                                }}/> ミニオン</label>
+                              <button onClick={()=>{
+                                const units=(act.units||[]).filter((_,i)=>i!==ui);
+                                updateAction(selectedEvent,ai,{units});
+                              }} style={{...smBtn('rgba(239,68,68,0.15)','#fca5a5'),fontSize:9}}>削除</button>
+                            </div>
+                          </div>
+                        ))}
+                        <button onClick={()=>{
+                          const def={template:enemyTemplates[0]?.name||'',x:0,y:0,ai:{movement:'rush',action:'attack'},level:1,minion:true};
+                          updateAction(selectedEvent,ai,{units:[...(act.units||[]),def]});
+                        }} style={smBtn('#334155','#94a3b8')}>+ ユニット追加</button>
+                      </>)}
+
+                      {/* despawn */}
+                      {act.type==='despawn'&&(
+                        <div style={rowS}>
+                          <span style={fLbl}>対象ID:</span>
+                          <input value={(act.targetIds||[]).join(',')}
+                            onChange={e=>updateAction(selectedEvent,ai,{targetIds:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})}
+                            style={{...iS,flex:1}} placeholder="e1, e2, ..."/>
+                        </div>
+                      )}
+
+                      {/* dialogue */}
+                      {act.type==='dialogue'&&(<>
+                        {(act.lines||[]).map((l,li)=>(
+                          <div key={li} style={{display:'flex',gap:4,alignItems:'center',marginBottom:3}}>
+                            <span style={{fontSize:9,color:'#475569',width:16}}>[{li+1}]</span>
+                            <input value={l.speaker||''} onChange={e=>{
+                              const lines=[...(act.lines||[])];lines[li]={...lines[li],speaker:e.target.value};
+                              updateAction(selectedEvent,ai,{lines});
+                            }} style={{...iS,width:60,fontSize:10}} placeholder="話者"/>
+                            <input value={l.text||''} onChange={e=>{
+                              const lines=[...(act.lines||[])];lines[li]={...lines[li],text:e.target.value};
+                              updateAction(selectedEvent,ai,{lines});
+                            }} style={{...iS,flex:1,fontSize:10}} placeholder="テキスト"/>
+                            <button onClick={()=>{
+                              const lines=(act.lines||[]).filter((_,i)=>i!==li);
+                              updateAction(selectedEvent,ai,{lines});
+                            }} style={{...smBtn('rgba(239,68,68,0.15)','#fca5a5'),fontSize:9}}>×</button>
+                          </div>
+                        ))}
+                        <button onClick={()=>{
+                          updateAction(selectedEvent,ai,{lines:[...(act.lines||[]),{speaker:'???',text:''}]});
+                        }} style={smBtn('#334155','#94a3b8')}>+ 行追加</button>
+                      </>)}
+
+                      {/* terrainChange */}
+                      {act.type==='terrainChange'&&(<>
+                        {(act.cells||[]).map((c,ci)=>(
+                          <div key={ci} style={{display:'flex',gap:4,alignItems:'center',marginBottom:3}}>
+                            <span style={{fontSize:10,color:'#94a3b8'}}>({c.x},{c.y}) → {terrains[c.terrainId]?.name||c.terrainId}</span>
+                            <button onClick={()=>{
+                              const cells=(act.cells||[]).filter((_,i)=>i!==ci);
+                              updateAction(selectedEvent,ai,{cells});
+                            }} style={{...smBtn('rgba(239,68,68,0.15)','#fca5a5'),fontSize:9,marginLeft:'auto'}}>×</button>
+                          </div>
+                        ))}
+                        <div style={{display:'flex',gap:4,alignItems:'center',marginTop:4}}>
+                          <span style={{fontSize:9,color:'#64748b'}}>x:</span>
+                          <input type="number" id={`tc_x_${ai}`} min={0} style={{...iS,width:35,fontSize:10}}/>
+                          <span style={{fontSize:9,color:'#64748b'}}>y:</span>
+                          <input type="number" id={`tc_y_${ai}`} min={0} style={{...iS,width:35,fontSize:10}}/>
+                          <span style={{fontSize:9,color:'#64748b'}}>地形:</span>
+                          <select id={`tc_t_${ai}`} style={{...iS,width:80,cursor:'pointer',fontSize:10}}>
+                            {terrains.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                          <button onClick={()=>{
+                            const xE=document.getElementById(`tc_x_${ai}`),yE=document.getElementById(`tc_y_${ai}`),tE=document.getElementById(`tc_t_${ai}`);
+                            const nx=+xE.value,ny=+yE.value,nt=+tE.value;
+                            if(isNaN(nx)||isNaN(ny))return;
+                            updateAction(selectedEvent,ai,{cells:[...(act.cells||[]),{x:nx,y:ny,terrainId:nt}]});
+                          }} style={smBtn('#334155','#94a3b8')}>追加</button>
+                        </div>
+                      </>)}
+
+                      {/* objective */}
+                      {act.type==='objective'&&(
+                        <div style={rowS}>
+                          <span style={fLbl}>結果:</span>
+                          <select value={act.result||'win'} onChange={e=>updateAction(selectedEvent,ai,{result:e.target.value})}
+                            style={{...iS,width:80,cursor:'pointer'}}>
+                            <option value="win">win</option><option value="lose">lose</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* setFlag */}
+                      {act.type==='setFlag'&&(<>
+                        <div style={rowS}>
+                          <span style={fLbl}>フラグ名:</span>
+                          <input value={act.flag||''} onChange={e=>updateAction(selectedEvent,ai,{flag:e.target.value})} style={{...iS,flex:1}}/>
+                        </div>
+                        <div style={rowS}>
+                          <span style={fLbl}>値:</span>
+                          <input value={act.value??''} onChange={e=>updateAction(selectedEvent,ai,{value:e.target.value})} style={{...iS,flex:1}}/>
+                        </div>
+                      </>)}
+
+                      {/* bgm */}
+                      {act.type==='bgm'&&(<>
+                        <div style={rowS}>
+                          <span style={fLbl}>トラック:</span>
+                          <input value={act.track||''} onChange={e=>updateAction(selectedEvent,ai,{track:e.target.value})} style={{...iS,flex:1}} placeholder="track_id（空=停止）"/>
+                        </div>
+                        <div style={rowS}>
+                          <label style={{fontSize:10,color:'#94a3b8',display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}>
+                            <input type="checkbox" checked={act.priority||false} onChange={e=>updateAction(selectedEvent,ai,{priority:e.target.checked})}/>
+                            優先（会話BGM等、他を上書き）
+                          </label>
+                        </div>
+                        <div style={rowS}>
+                          <span style={fLbl}>フェード(ms):</span>
+                          <input type="number" value={act.fade??0} min={0} onChange={e=>updateAction(selectedEvent,ai,{fade:+e.target.value})} style={{...iS,width:60}}/>
+                          <label style={{fontSize:10,color:'#94a3b8',display:'flex',alignItems:'center',gap:4,cursor:'pointer',marginLeft:8}}>
+                            <input type="checkbox" checked={act.resume||false} onChange={e=>updateAction(selectedEvent,ai,{resume:e.target.checked})}/>
+                            終了後に前の曲へ復帰
+                          </label>
+                        </div>
+                      </>)}
+
+                      {/* camera */}
+                      {act.type==='camera'&&(
+                        <div style={rowS}>
+                          <span style={{fontSize:9,color:'#64748b'}}>x:</span>
+                          <input type="number" value={act.x??0} onChange={e=>updateAction(selectedEvent,ai,{x:+e.target.value})} style={{...iS,width:45}}/>
+                          <span style={{fontSize:9,color:'#64748b'}}>y:</span>
+                          <input type="number" value={act.y??0} onChange={e=>updateAction(selectedEvent,ai,{y:+e.target.value})} style={{...iS,width:45}}/>
+                          <span style={{fontSize:9,color:'#64748b'}}>時間(ms):</span>
+                          <input type="number" value={act.duration??500} min={0} onChange={e=>updateAction(selectedEvent,ai,{duration:+e.target.value})} style={{...iS,width:60}}/>
+                        </div>
+                      )}
+
+                      {/* changeAI */}
+                      {act.type==='changeAI'&&(
+                        <div>
+                          <div style={{...rowS,marginBottom:4}}>
+                            <span style={{fontSize:9,color:'#64748b'}}>対象:</span>
+                            <input value={act.target||''} onChange={e=>updateAction(selectedEvent,ai,{target:e.target.value})}
+                              style={{...iS,flex:1,fontSize:10}} placeholder="グループ名 / 敵ID / all" list="dl-enemy-groups"/>
+                          </div>
+                          <div style={{...rowS,marginBottom:4}}>
+                            <span style={{fontSize:9,color:'#64748b'}}>移動:</span>
+                            <select value={act.ai?.movement||''} onChange={e=>{
+                              const v=e.target.value;const na={...(act.ai||{})};
+                              if(v)na.movement=v;else delete na.movement;
+                              updateAction(selectedEvent,ai,{ai:Object.keys(na).length?na:null});
+                            }} style={{...iS,width:70,fontSize:10,cursor:'pointer'}}>
+                              <option value="">変更なし</option>
+                              {MOVEMENTS.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                            <span style={{fontSize:9,color:'#64748b'}}>行動:</span>
+                            <select value={act.ai?.action||''} onChange={e=>{
+                              const v=e.target.value;const na={...(act.ai||{})};
+                              if(v)na.action=v;else delete na.action;
+                              updateAction(selectedEvent,ai,{ai:Object.keys(na).length?na:null});
+                            }} style={{...iS,width:80,fontSize:10,cursor:'pointer'}}>
+                              <option value="">変更なし</option>
+                              {ACTIONS.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                            </select>
+                          </div>
+                          <div style={{fontSize:8,color:'#475569'}}>※ ai:null で上書きリセット（テンプレAI+aiRulesに戻す）</div>
+                        </div>
+                      )}
+                    </div>
+                    );
+                  })}
+                  {selEvt.actions.length===0&&<div style={{fontSize:10,color:'#475569',textAlign:'center',padding:8}}>アクションなし</div>}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* ── Import/Export Bar ── */}
+      <div style={{background:'#1e293b',borderTop:'1px solid #334155',padding:'6px 16px',display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap'}}>
+        <button onClick={handleExport} style={abtn('#3b82f6','#fff')}>📋 エクスポート</button>
+        <button onClick={handleDownload} style={abtn('#2563eb','#fff')}>💾 JSON保存</button>
+        <label style={{...abtn('#334155','#94a3b8'),cursor:'pointer'}}>
+          📂 JSON読込<input type="file" accept=".json" onChange={handleFileImport} style={{display:'none'}}/>
+        </label>
+        <button onClick={handleTextImport} style={abtn('#334155','#94a3b8')}>📝 テキスト読込</button>
+        <button onClick={handleClearAll} style={abtn('#334155','#64748b')}>全クリア</button>
+        <div style={{marginLeft:'auto',fontSize:9,color:'#475569'}}>
+          Zoom: {tileSize}px | Grid: {showGrid?'ON':'OFF'} [G]
+        </div>
+      </div>
+
+      {/* ── Export Overlay ── */}
+      {showExport&&(
+        <div style={{position:'fixed',bottom:48,left:0,right:0,background:'#1e293b',borderTop:'1px solid #334155',padding:12,zIndex:100}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <span style={{fontSize:12,color:'#64748b'}}>エクスポートデータ</span>
+            <div style={{display:'flex',gap:4}}>
+              <button onClick={()=>navigator.clipboard?.writeText(exported)}
+                style={{background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,padding:'4px 12px',fontSize:11,cursor:'pointer'}}>コピー</button>
+              <button onClick={()=>setShowExport(false)}
+                style={{background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,padding:'4px 12px',fontSize:11,cursor:'pointer'}}>閉じる</button>
+            </div>
+          </div>
+          <textarea value={exported} readOnly
+            style={{width:'100%',height:200,background:'#0f172a',color:'#94a3b8',border:'1px solid #334155',borderRadius:4,padding:8,fontSize:10,fontFamily:'monospace',resize:'vertical'}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Style helpers
+function abtn(bg,c){return{display:'inline-block',padding:'5px 12px',background:bg,color:c,border:'none',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer'};}
+function ubtn(ok){return{padding:'3px 8px',fontSize:11,fontWeight:600,borderRadius:4,cursor:ok?'pointer':'default',background:ok?'#334155':'#1e293b',color:ok?'#94a3b8':'#334155',border:'1px solid #334155',opacity:ok?1:0.5};}
+
+// ── App Root ──
+function App(){
+  const [gameData,setGameData]=useState(null);
+
+  if(!gameData) return <DataLoader onReady={d=>setGameData(d)}/>;
+  return <MapEditor gameData={gameData}/>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

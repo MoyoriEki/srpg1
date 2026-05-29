@@ -1,0 +1,307 @@
+{
+  "グール": {
+    "baseLv": 1,
+    "base": {
+      "hp": 28,
+      "str": 12,
+      "def": 6,
+      "int": 5,
+      "mov": 4,
+      "pp": 5
+    },
+    "growth": {
+      "hp": 3,
+      "str": 1.2,
+      "def": 0.8,
+      "int": 0.3
+    },
+    "variance": 1,
+    "range": {
+      "min": 1,
+      "max": 1
+    },
+    "techs": [
+      "強撃"
+    ],
+    "ai": {
+      "movement": "rush",
+      "action": "attack"
+    },
+    "drop": {
+      "type": "item",
+      "ref": "item_heal",
+      "rate": 30
+    },
+    "color": "#dc2626"
+  },
+  "シューター": {
+    "baseLv": 1,
+    "base": {
+      "hp": 22,
+      "str": 10,
+      "def": 4,
+      "int": 8,
+      "mov": 3,
+      "pp": 4
+    },
+    "growth": {
+      "hp": 2,
+      "str": 1,
+      "def": 0.5,
+      "int": 0.8
+    },
+    "variance": 1,
+    "range": {
+      "min": 2,
+      "max": 3
+    },
+    "techs": [
+      "強弓"
+    ],
+    "ai": {
+      "movement": "reactive",
+      "action": "attack"
+    },
+    "color": "#b45309"
+  },
+  "ガード": {
+    "baseLv": 2,
+    "base": {
+      "hp": 42,
+      "str": 14,
+      "def": 16,
+      "int": 4,
+      "mov": 3,
+      "pp": 4
+    },
+    "growth": {
+      "hp": 4,
+      "str": 1,
+      "def": 1.5,
+      "int": 0.2
+    },
+    "variance": 1,
+    "range": {
+      "min": 1,
+      "max": 1
+    },
+    "techs": [
+      "強撃"
+    ],
+    "ai": {
+      "movement": "fixed",
+      "action": "attack"
+    },
+    "color": "#991b1b"
+  },
+  "ボマー": {
+    "baseLv": 2,
+    "base": {
+      "hp": 24,
+      "str": 22,
+      "def": 4,
+      "int": 10,
+      "mov": 3,
+      "pp": 5
+    },
+    "growth": {
+      "hp": 2,
+      "str": 1.5,
+      "def": 0.3,
+      "int": 0.5
+    },
+    "variance": 1,
+    "range": {
+      "min": 1,
+      "max": 1
+    },
+    "techs": [
+      "強撃"
+    ],
+    "ai": {
+      "movement": "fixed",
+      "action": "attack"
+    },
+    "charge": {
+      "tech": "大爆発",
+      "turns": 2,
+      "repeat": false,
+      "onMiss": "fire",
+      "trigger": {
+        "type": "mapStart"
+      }
+    },
+    "color": "#f97316"
+  },
+  "堕天使": {
+    "baseLv": 3,
+    "base": {
+      "hp": 25,
+      "str": 7,
+      "def": 5,
+      "int": 14,
+      "mov": 4,
+      "pp": 3
+    },
+    "growth": {
+      "hp": 2,
+      "str": 0.5,
+      "def": 0.5,
+      "int": 1.5
+    },
+    "variance": 2,
+    "range": {
+      "min": 1,
+      "max": 1
+    },
+    "techs": [
+      "祈り"
+    ],
+    "ai": {
+      "movement": "flee",
+      "action": "support"
+    },
+    "color": "#6d28d9"
+  },
+  "ボス": {
+    "baseLv": 3,
+    "base": {
+      "hp": 60,
+      "str": 20,
+      "def": 14,
+      "int": 12,
+      "mov": 4,
+      "pp": 8
+    },
+    "growth": {
+      "hp": 8,
+      "str": 2,
+      "def": 1.5,
+      "int": 1
+    },
+    "variance": 0,
+    "range": {
+      "min": 1,
+      "max": 1
+    },
+    "techs": [
+      "渾身",
+      "咆哮"
+    ],
+    "ai": {
+      "movement": "reactive",
+      "action": "attack"
+    },
+    "aiRules": [
+      {
+        "trigger": {
+          "type": "hpBelow",
+          "pct": 50
+        },
+        "ai": {
+          "movement": "rush",
+          "action": "techFocus",
+          "focusTech": "咆哮"
+        }
+      }
+    ],
+    "bossRank": true,
+    "color": "#7f1d1d"
+  },
+  "ゾンビ王": {
+    "baseLv": 3,
+    "base": {
+      "hp": 50,
+      "str": 18,
+      "def": 12,
+      "int": 8,
+      "mov": 3,
+      "pp": 8
+    },
+    "growth": {
+      "hp": 5,
+      "str": 1.5,
+      "def": 1.2,
+      "int": 0.5
+    },
+    "variance": 0,
+    "range": {
+      "min": 1,
+      "max": 1
+    },
+    "techs": [
+      "強撃",
+      "咆哮"
+    ],
+    "ai": {
+      "movement": "reactive",
+      "action": "attack"
+    },
+    "aiRules": [
+      {
+        "trigger": {
+          "type": "hpBelow",
+          "pct": 30
+        },
+        "ai": {
+          "movement": "rush",
+          "action": "techFocus",
+          "focusTech": "咆哮"
+        }
+      }
+    ],
+    "charge": {
+      "tech": "憤怒の咆哮",
+      "turns": 1,
+      "repeat": true,
+      "onMiss": "keep",
+      "trigger": {
+        "type": "allyHit",
+        "group": "zombies"
+      }
+    },
+    "bossRank": true,
+    "color": "#7f1d1d"
+  },
+  "ドラゴン": {
+    "baseLv": 5,
+    "base": {
+      "hp": 80,
+      "str": 24,
+      "def": 18,
+      "int": 15,
+      "mov": 3,
+      "pp": 10
+    },
+    "growth": {
+      "hp": 8,
+      "str": 2,
+      "def": 2,
+      "int": 1
+    },
+    "variance": 0,
+    "range": {
+      "min": 1,
+      "max": 2
+    },
+    "techs": [
+      "強撃"
+    ],
+    "ai": {
+      "movement": "fixed",
+      "action": "attack"
+    },
+    "charge": {
+      "tech": "ブレス",
+      "turns": 3,
+      "repeat": true,
+      "onMiss": "fire",
+      "trigger": {
+        "type": "proximity",
+        "range": 5
+      }
+    },
+    "bossRank": true,
+    "color": "#991b1b"
+  }
+}

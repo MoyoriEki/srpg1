@@ -1,0 +1,38 @@
+[
+  {
+    "id": 0,
+    "name": "平地",
+    "color": "#4a7c34",
+    "def": 0,
+    "moveCost": 1
+  },
+  {
+    "id": 1,
+    "name": "森",
+    "color": "#2d5a1e",
+    "def": 1,
+    "moveCost": 2
+  },
+  {
+    "id": 2,
+    "name": "山",
+    "color": "#6b7280",
+    "def": 0,
+    "moveCost": 99,
+    "impassable": true
+  },
+  {
+    "id": 3,
+    "name": "砦",
+    "color": "#8b7355",
+    "def": 2,
+    "moveCost": 1
+  },
+  {
+    "id": 4,
+    "name": "アイテムボックス",
+    "color": "#d4a017",
+    "def": 0,
+    "moveCost": 1
+  }
+]
