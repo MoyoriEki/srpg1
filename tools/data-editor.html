@@ -208,7 +208,14 @@ function EffectsPanel({effects,onChange,triggerOpts,triggerMap,counterNames}){
 }
 
 // ── DataLoader ──
-const ALL_FILES={techs:'../src/data/techs.json',parts:'../src/data/parts.json',terrains:'../src/data/terrains.json',classes:'../src/data/classes.json',units:'../src/data/units.json',enemies:'../src/data/enemies.json',items:'../src/data/items.json',monsters:'../src/data/monsters.json',traits:'../src/data/traits.json',minions:'../src/data/minions.json',counters:'../src/data/counters.json'};
+// ── GitHub 連携設定 ──
+const GH={owner:'MoyoriEki',repo:'srpg1',branch:'main'};
+// データ取得元: github.io 上では raw.githubusercontent から、ローカルでは相対パスから
+const ON_PAGES=location.hostname.endsWith('github.io');
+const DATA_DIR=ON_PAGES?`https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/src/data/`:'../src/data/';
+const _cb=ON_PAGES?`?t=${Date.now()}`:''; // raw CDN のキャッシュ回避
+const DATA_KEYS=['techs','parts','terrains','classes','units','enemies','items','monsters','traits','minions','counters'];
+const ALL_FILES=Object.fromEntries(DATA_KEYS.map(k=>[k,DATA_DIR+k+'.json'+_cb]));
 const REQ_FILES=['techs','parts'];
 function DataLoader({onReady}){
   const [st,setSt]=useState({});const [d,setD]=useState({});const [ld,setLd]=useState(true);
@@ -223,7 +230,7 @@ function DataLoader({onReady}){
   return(<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',padding:16}}>
     <div style={{background:'#1e293b',borderRadius:12,padding:24,border:'1px solid #334155',maxWidth:480,width:'100%'}}>
       <h2 style={{fontSize:16,marginBottom:12,color:'#f59e0b'}}>データ読み込み</h2>
-      {Object.entries(ALL_FILES).map(([k,p])=>{const fn=p.split('/').pop();const req=REQ_FILES.includes(k);
+      {Object.entries(ALL_FILES).map(([k,p])=>{const fn=p.split('/').pop().split('?')[0];const req=REQ_FILES.includes(k);
         return(<div key={k} style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
           <span style={{fontSize:12,flex:1}}>{fn}{req&&<span style={{color:'#f87171'}}> *</span>}</span>
           <label style={{padding:'6px 12px',background:'#334155',color:'#94a3b8',borderRadius:6,fontSize:11,cursor:'pointer',minHeight:32,display:'flex',alignItems:'center'}}>選択<input type="file" accept=".json" onChange={e=>hf(k,e)} style={{display:'none'}}/></label>
@@ -1777,6 +1784,41 @@ function App(){
       r.readAsText(f);};input.click();
   }
   async function expAll(){const z=new JSZip();for(const k of FILE_KEYS)z.file(k+'.json',JSON.stringify(dataMap[k],null,2));const b=await z.generateAsync({type:'blob'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='srpg_data.zip';a.click();URL.revokeObjectURL(u);}
+  // ── GitHub 直接コミット ──
+  const PAT_KEY='srpg1_gh_pat';
+  function setPatPrompt(){
+    const cur=localStorage.getItem(PAT_KEY)||'';
+    const t=prompt('GitHub Personal Access Token を入力\n（Fine-grained: '+GH.repo+' リポジトリに Contents = Read and write 権限）\n※空欄で保存すると削除',cur);
+    if(t===null)return;
+    if(t.trim()===''){localStorage.removeItem(PAT_KEY);alert('トークンを削除した');}
+    else{localStorage.setItem(PAT_KEY,t.trim());alert('トークンを保存した（このブラウザにのみ保存）');}
+  }
+  async function ghCommitAll(){
+    let pat=localStorage.getItem(PAT_KEY)||'';
+    if(!pat){setPatPrompt();pat=localStorage.getItem(PAT_KEY)||'';if(!pat)return;}
+    const msg=prompt('コミットメッセージ','データ更新 (data-editor)');
+    if(msg===null)return;
+    const api=`https://api.github.com/repos/${GH.owner}/${GH.repo}`;
+    const H={'Authorization':'Bearer '+pat,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
+    const chk=r=>{if(!r.ok)return r.text().then(t=>{throw new Error(r.status+' '+t.slice(0,200));});return r.json();};
+    try{
+      const ref=await fetch(`${api}/git/ref/heads/${GH.branch}`,{headers:H}).then(chk);
+      const baseCommitSha=ref.object.sha;
+      const baseCommit=await fetch(`${api}/git/commits/${baseCommitSha}`,{headers:H}).then(chk);
+      const baseTreeSha=baseCommit.tree.sha;
+      const tree=[];
+      for(const k of FILE_KEYS){
+        const content=JSON.stringify(dataMap[k],null,2)+'\n';
+        const blob=await fetch(`${api}/git/blobs`,{method:'POST',headers:H,body:JSON.stringify({content,encoding:'utf-8'})}).then(chk);
+        tree.push({path:`src/data/${k}.json`,mode:'100644',type:'blob',sha:blob.sha});
+      }
+      const newTree=await fetch(`${api}/git/trees`,{method:'POST',headers:H,body:JSON.stringify({base_tree:baseTreeSha,tree})}).then(chk);
+      if(newTree.sha===baseTreeSha){alert('変更なし（コミットしなかった）');return;}
+      const commit=await fetch(`${api}/git/commits`,{method:'POST',headers:H,body:JSON.stringify({message:msg,tree:newTree.sha,parents:[baseCommitSha]})}).then(chk);
+      await fetch(`${api}/git/refs/heads/${GH.branch}`,{method:'PATCH',headers:H,body:JSON.stringify({sha:commit.sha})}).then(chk);
+      alert('✅ コミット完了 '+commit.sha.slice(0,7)+'\nGitHub Actions が再ビルド開始（数分でゲームに反映）');
+    }catch(err){alert('❌ コミット失敗: '+err.message+'\n\nトークンの権限(Contents:RW)とリポジトリ名を確認して');}
+  }
   if(!gd)return<DataLoader onReady={ready}/>;
   return(<div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
     <div style={{background:'#1e293b',borderBottom:'1px solid #334155',padding:'8px 12px',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
@@ -1793,6 +1835,8 @@ function App(){
           {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
         </select>
         <button onClick={expAll} style={{padding:'6px 12px',fontSize:11,fontWeight:700,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>💾 全保存</button>
+        <button onClick={setPatPrompt} title="GitHubトークン設定" style={{padding:'6px 10px',fontSize:13,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>🔑</button>
+        <button onClick={ghCommitAll} title="全データをGitHubにコミット" style={{padding:'6px 12px',fontSize:11,fontWeight:700,background:'#22c55e',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>🚀 GitHub保存</button>
       </div>
     </div>
     <div style={{background:'#1e293b',borderBottom:'1px solid #334155',display:'flex',flexShrink:0,overflowX:'auto'}}>
