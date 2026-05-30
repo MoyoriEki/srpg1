@@ -51,6 +51,8 @@ const lbl={fontSize:11,color:'#64748b',marginBottom:4,marginTop:12};
 const crd={background:'#1e293b',border:'1px solid #334155',borderRadius:8,padding:12,marginBottom:8};
 const rowS={display:'flex',gap:8,alignItems:'center'};
 const chip=(a,c)=>({padding:'6px 12px',fontSize:12,fontWeight:600,borderRadius:16,cursor:'pointer',border:'none',minHeight:36,background:a?c+'30':'#1e293b',color:a?c:'#64748b',outline:a?`1px solid ${c}`:'1px solid #334155'});
+// 絞り込み用の小さめチップ（型/属などのフィルタ行向け）
+const chipF=(a,c)=>({...chip(a,c),padding:'3px 9px',fontSize:11,minHeight:26});
 
 let _dragIdx=null;
 function ListItem({selected,onClick,onUp,onDown,onDup,onDel,first,last,idx,onReorder,children}){
@@ -323,13 +325,13 @@ function TechEditor({techs,setTechs,parts,setParts,counterNames}){
     <div style={{padding:12,borderBottom:'1px solid #334155',display:'flex',flexDirection:'column',gap:6}}>
       <input value={flt} onChange={e=>setFlt(e.target.value)} placeholder="🔍 検索" style={{...iS,fontSize:13}}/>
       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-        <button onClick={()=>setTFlt('')} style={chip(!tFlt,'#e2e8f0')}>全型</button>
-        {TT.map(x=><button key={x.id} onClick={()=>setTFlt(x.id===tFlt?'':x.id)} style={chip(tFlt===x.id,'#3b82f6')}>{x.s}</button>)}
+        <button onClick={()=>setTFlt('')} style={chipF(!tFlt,'#e2e8f0')}>全型</button>
+        {TT.map(x=><button key={x.id} onClick={()=>setTFlt(x.id===tFlt?'':x.id)} style={chipF(tFlt===x.id,'#3b82f6')}>{x.s}</button>)}
       </div>
       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全属</button>
-        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}</button>)}
-        <button onClick={()=>setGFlt(gFlt==='_none'?'':'_none')} style={chip(gFlt==='_none','#475569')}>?</button>
+        <button onClick={()=>setGFlt('')} style={chipF(!gFlt,'#e2e8f0')}>全属</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chipF(gFlt===x.id,x.c)}>{x.l}</button>)}
+        <button onClick={()=>setGFlt(gFlt==='_none'?'':'_none')} style={chipF(gFlt==='_none','#475569')}>?</button>
       </div>
     </div>
     <div style={{flex:1,overflowY:'auto',padding:8}}>
@@ -639,8 +641,8 @@ function SkillEditor({parts,setParts,counterNames}){
     <div style={{padding:12,borderBottom:'1px solid #334155',display:'flex',flexDirection:'column',gap:6}}>
       <input value={flt} onChange={e=>setFlt(e.target.value)} placeholder="🔍 検索" style={{...iS,fontSize:13}}/>
       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全</button>
-        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}</button>)}
+        <button onClick={()=>setGFlt('')} style={chipF(!gFlt,'#e2e8f0')}>全</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chipF(gFlt===x.id,x.c)}>{x.l}</button>)}
         <span style={{marginLeft:'auto',fontSize:11,color:'#475569',alignSelf:'center'}}>{filtered.length}/{skills.length}</span>
       </div>
     </div>
@@ -828,16 +830,16 @@ function DraftEditor({parts,setParts,techs,setTechs,counterNames}){
     <div style={{padding:12,borderBottom:'1px solid #334155',display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
       <input value={flt} onChange={e=>setFlt(e.target.value)} placeholder="🔍 検索" style={{...iS,fontSize:13}}/>
       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全({rp.length})</button>
-        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}{cnt[x.id]||0}</button>)}
+        <button onClick={()=>setGFlt('')} style={chipF(!gFlt,'#e2e8f0')}>全({rp.length})</button>
+        {TAGS.map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chipF(gFlt===x.id,x.c)}>{x.l}{cnt[x.id]||0}</button>)}
       </div>
       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-        <button onClick={()=>setRFlt('')} style={chip(!rFlt,'#e2e8f0')}>全R</button>
-        {RAR.map(x=><button key={x.id} onClick={()=>setRFlt(x.id===rFlt?'':x.id)} style={chip(rFlt===x.id,x.c)}>{x.l}</button>)}
+        <button onClick={()=>setRFlt('')} style={chipF(!rFlt,'#e2e8f0')}>全R</button>
+        {RAR.map(x=><button key={x.id} onClick={()=>setRFlt(x.id===rFlt?'':x.id)} style={chipF(rFlt===x.id,x.c)}>{x.l}</button>)}
         <span style={{margin:'0 8px',color:'#334155'}}>|</span>
-        <button onClick={()=>setTFlt('')} style={chip(!tFlt,'#e2e8f0')}>全種</button>
-        <button onClick={()=>setTFlt(tFlt==='tech'?'':'tech')} style={chip(tFlt==='tech','#94a3b8')}>技</button>
-        <button onClick={()=>setTFlt(tFlt==='skill'?'':'skill')} style={chip(tFlt==='skill','#60a5fa')}>スキル</button>
+        <button onClick={()=>setTFlt('')} style={chipF(!tFlt,'#e2e8f0')}>全種</button>
+        <button onClick={()=>setTFlt(tFlt==='tech'?'':'tech')} style={chipF(tFlt==='tech','#94a3b8')}>技</button>
+        <button onClick={()=>setTFlt(tFlt==='skill'?'':'skill')} style={chipF(tFlt==='skill','#60a5fa')}>スキル</button>
         <span style={{marginLeft:'auto',fontSize:11,color:'#475569',alignSelf:'center'}}>{fd.length}件</span>
       </div>
     </div>
@@ -1142,8 +1144,8 @@ function UnitEditor({units,setUnits,techs,traits}){
   const listV=(<div style={{display:'flex',flexDirection:'column',height:'100%'}}>
     <div style={{padding:12,borderBottom:'1px solid #334155'}}>
       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-        <button onClick={()=>setGFlt('')} style={chip(!gFlt,'#e2e8f0')}>全</button>
-        {TAGS.slice(0,3).map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chip(gFlt===x.id,x.c)}>{x.l}</button>)}
+        <button onClick={()=>setGFlt('')} style={chipF(!gFlt,'#e2e8f0')}>全</button>
+        {TAGS.slice(0,3).map(x=><button key={x.id} onClick={()=>setGFlt(x.id===gFlt?'':x.id)} style={chipF(gFlt===x.id,x.c)}>{x.l}</button>)}
         <span style={{marginLeft:'auto',fontSize:11,color:'#475569',alignSelf:'center'}}>{filtered.length}/{units.length}</span>
       </div>
     </div>
@@ -1821,22 +1823,22 @@ function App(){
   }
   if(!gd)return<DataLoader onReady={ready}/>;
   return(<div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
-    <div style={{background:'#1e293b',borderBottom:'1px solid #334155',padding:'8px 12px',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
-      <span style={{fontSize:14,fontWeight:700,color:'#64748b',letterSpacing:2}}>DATA EDITOR</span>
-      <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+    <div style={{background:'#1e293b',borderBottom:'1px solid #334155',padding:'6px 10px',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
+      <span style={{fontSize:13,fontWeight:700,color:'#64748b',letterSpacing:1,whiteSpace:'nowrap'}}>DATA EDITOR</span>
+      <div style={{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}}>
         <select onChange={e=>{if(e.target.value){imp(e.target.value);e.target.value='';}}} defaultValue=""
-          style={{padding:'6px 10px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>
+          style={{padding:'3px 6px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>
           <option value="" disabled>📂 読込</option>
           {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
         </select>
         <select onChange={e=>{if(e.target.value){exp(e.target.value);e.target.value='';}}} defaultValue=""
-          style={{padding:'6px 10px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>
+          style={{padding:'3px 6px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>
           <option value="" disabled>💾 保存</option>
           {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
         </select>
-        <button onClick={expAll} style={{padding:'6px 12px',fontSize:11,fontWeight:700,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>💾 全保存</button>
-        <button onClick={setPatPrompt} title="GitHubトークン設定" style={{padding:'6px 10px',fontSize:13,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>🔑</button>
-        <button onClick={ghCommitAll} title="全データをGitHubにコミット" style={{padding:'6px 12px',fontSize:11,fontWeight:700,background:'#22c55e',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:36}}>🚀 GitHub保存</button>
+        <button onClick={expAll} style={{padding:'3px 8px',fontSize:11,fontWeight:700,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>💾 全保存</button>
+        <button onClick={setPatPrompt} title="GitHubトークン設定" style={{padding:'3px 7px',fontSize:13,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28}}>🔑</button>
+        <button onClick={ghCommitAll} title="全データをGitHubにコミット" style={{padding:'3px 8px',fontSize:11,fontWeight:700,background:'#22c55e',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>🚀 GitHub保存</button>
       </div>
     </div>
     <div style={{background:'#1e293b',borderBottom:'1px solid #334155',display:'flex',flexShrink:0,overflowX:'auto'}}>
