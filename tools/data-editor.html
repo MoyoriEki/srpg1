@@ -1827,18 +1827,18 @@ function App(){
       <span style={{fontSize:13,fontWeight:700,color:'#64748b',letterSpacing:1,whiteSpace:'nowrap'}}>DATA EDITOR</span>
       <div style={{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}}>
         <select onChange={e=>{if(e.target.value){imp(e.target.value);e.target.value='';}}} defaultValue=""
-          style={{padding:'3px 6px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>
+          style={{width:78,padding:'3px 4px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>
           <option value="" disabled>📂 読込</option>
           {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
         </select>
         <select onChange={e=>{if(e.target.value){exp(e.target.value);e.target.value='';}}} defaultValue=""
-          style={{padding:'3px 6px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>
+          style={{width:78,padding:'3px 4px',fontSize:11,fontWeight:600,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>
           <option value="" disabled>💾 保存</option>
           {FILE_KEYS.map(k=><option key={k} value={k}>{k}.json</option>)}
         </select>
-        <button onClick={expAll} style={{padding:'3px 8px',fontSize:11,fontWeight:700,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>💾 全保存</button>
-        <button onClick={setPatPrompt} title="GitHubトークン設定" style={{padding:'3px 7px',fontSize:13,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28}}>🔑</button>
-        <button onClick={ghCommitAll} title="全データをGitHubにコミット" style={{padding:'3px 8px',fontSize:11,fontWeight:700,background:'#22c55e',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>🚀 GitHub保存</button>
+        <button onClick={expAll} style={{padding:'3px 7px',fontSize:11,fontWeight:700,background:'#3b82f6',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>💾 全保存</button>
+        <button onClick={setPatPrompt} title="GitHubトークン設定" style={{padding:'3px 6px',fontSize:13,background:'#334155',color:'#94a3b8',border:'none',borderRadius:4,cursor:'pointer',minHeight:28}}>🔑</button>
+        <button onClick={ghCommitAll} title="全データをGitHubにコミット" style={{padding:'3px 7px',fontSize:11,fontWeight:700,background:'#22c55e',color:'#fff',border:'none',borderRadius:4,cursor:'pointer',minHeight:28,whiteSpace:'nowrap'}}>🚀 GitHub</button>
       </div>
     </div>
     <div style={{background:'#1e293b',borderBottom:'1px solid #334155',display:'flex',flexShrink:0,overflowX:'auto'}}>
