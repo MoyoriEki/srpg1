@@ -214,7 +214,7 @@ export function executeHeal(healerUnit, targetUnit, tech, units) {
 export function executeCombat(atkUnit, defUnit, tech, units) {
   const us = cloneUnits(units);
   const a = us.find(u => u.id === atkUnit.id);
-  const d = us.find(u => u.id === defUnit.id);
+  let d = us.find(u => u.id === defUnit.id);
   const logs = [];
   const hits = [];
   let totalExp = 0;
