@@ -25,6 +25,7 @@ import { isStunned, calcCounterHit } from './engine/debuff.js';
 import { playBGM, stopBGM } from './engine/audio.js';
 import itemsData from './data/items.json';
 
+import ScreenScaler from './ui/ScreenScaler.jsx';
 import SettingsPanel from './ui/SettingsPanel.jsx';
 import MapView from './ui/MapView.jsx';
 import LogPanel from './ui/LogPanel.jsx';
@@ -1585,9 +1586,12 @@ export default function App() {
 
     // 空セル → コンテキストメニュー
     if (phase === 'player') {
-      const rect = rootRef.current?.getBoundingClientRect();
-      const px = rect ? e.clientX - rect.left : cx * TILE;
-      const py = rect ? e.clientY - rect.top : cy * TILE;
+      const el = rootRef.current;
+      const rect = el?.getBoundingClientRect();
+      // CSSスケール補正（スマホ縮小表示時）
+      const scale = el && el.offsetWidth ? rect.width / el.offsetWidth : 1;
+      const px = rect ? (e.clientX - rect.left) / scale : cx * TILE;
+      const py = rect ? (e.clientY - rect.top) / scale : cy * TILE;
       setCtxMenu({ x: px, y: py });
     }
   }
@@ -1686,9 +1690,10 @@ export default function App() {
   const terrain = mapData?.terrain || [];
 
   return (
+    <ScreenScaler>
     <div ref={rootRef} style={{
       width: GW, height: GH, position: 'relative', overflow: 'hidden',
-      background: '#0c0f1a', margin: '0 auto',
+      background: '#0c0f1a',
       fontFamily: "'Noto Sans JP','Hiragino Sans',sans-serif",
       userSelect: 'none',
       cursor: 'default',
@@ -1876,5 +1881,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </ScreenScaler>
   );
 }

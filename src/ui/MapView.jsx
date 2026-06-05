@@ -152,56 +152,134 @@ export default function MapView({
   const mapOX = (GW - MAP_W()) / 2;
   const mapOY = (GH - MAP_H()) / 2;
 
+  // クライアント座標→セル変換（CSSスケール補正込み: スマホ縮小表示対応）
+  const cellFromClient = useCallback((clientX, clientY, el) => {
+    const rect = el.getBoundingClientRect();
+    // transform:scale 下では rect は縮小済み。offsetWidth は論理幅なので比でスケールを得る
+    const scale = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    const lx = (clientX - rect.left) / scale;
+    const ly = (clientY - rect.top) / scale;
+    const cx = Math.floor((lx - mapOX - cam.x) / TILE);
+    const cy = Math.floor((ly - mapOY - cam.y) / TILE);
+    return { cx, cy };
+  }, [cam, mapOX, mapOY]);
+
+  // タッチ由来の合成マウスイベントを無視するためのフラグ
+  const lastTouchRef = useRef(0);
+  const longPressTimerRef = useRef(null);
+  const touchRef = useRef(null);
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+  };
+
+  // ─── マウス（PC）───
   const handleMouseDown = useCallback((e) => {
     if (e.button === 2) return; // 右クリックはスルー
-    dragRef.current = { sx: e.clientX - cam.x, sy: e.clientY - cam.y, moved: false };
+    if (Date.now() - lastTouchRef.current < 600) return; // タッチ由来は無視
+    dragRef.current = { sx: e.clientX, sy: e.clientY, camX: cam.x, camY: cam.y, moved: false };
   }, [cam]);
 
   const handleMouseMove = useCallback((e) => {
     if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.sx;
-    const dy = e.clientY - dragRef.current.sy;
-    if (Math.abs(dx - cam.x) > 3 || Math.abs(dy - cam.y) > 3) dragRef.current.moved = true;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const scale = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    const dx = (e.clientX - dragRef.current.sx) / scale;
+    const dy = (e.clientY - dragRef.current.sy) / scale;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragRef.current.moved = true;
     const mw = MAP_W(), mh = MAP_H();
     setCam({
-      x: mw <= GW ? 0 : Math.max(GW - mw, Math.min(0, dx)),
-      y: mh <= GH ? 0 : Math.max(GH - mh, Math.min(0, dy)),
+      x: mw <= GW ? 0 : Math.max(GW - mw, Math.min(0, dragRef.current.camX + dx)),
+      y: mh <= GH ? 0 : Math.max(GH - mh, Math.min(0, dragRef.current.camY + dy)),
     });
-  }, [cam]);
+  }, []);
 
   const handleMouseUp = useCallback((e) => {
     const d = dragRef.current;
     dragRef.current = null;
+    if (Date.now() - lastTouchRef.current < 600) return; // タッチ由来は無視
     if (d && d.moved) return; // ドラッグだったらクリック無視
-    // マップクリック座標→セル変換
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = Math.floor((e.clientX - rect.left - mapOX - cam.x) / TILE);
-    const cy = Math.floor((e.clientY - rect.top - mapOY - cam.y) / TILE);
-    if (cx < 0 || cy < 0 || cx >= COLS() || cy >= ROWS()) return;
     if (e.button === 2) return; // 右クリックはhandleContextMenuで処理
-    // ユニットがいればユニットクリック、なければセルクリック
+    const { cx, cy } = cellFromClient(e.clientX, e.clientY, e.currentTarget);
+    if (cx < 0 || cy < 0 || cx >= COLS() || cy >= ROWS()) return;
     const u = units.find(u => u.hp > 0 && u.x === cx && u.y === cy);
     if (u) onUnitClick?.(u);
     else   onCellClick?.(cx, cy);
-  }, [cam, mapOX, mapOY, units, onCellClick, onCellRightClick, onUnitClick]);
+  }, [cellFromClient, units, onCellClick, onUnitClick]);
 
   const handleContextMenu = useCallback((e) => {
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = Math.floor((e.clientX - rect.left - mapOX - cam.x) / TILE);
-    const cy = Math.floor((e.clientY - rect.top - mapOY - cam.y) / TILE);
+    if (Date.now() - lastTouchRef.current < 600) return; // 長押しで処理済み
+    const { cx, cy } = cellFromClient(e.clientX, e.clientY, e.currentTarget);
     if (cx < 0 || cy < 0 || cx >= COLS() || cy >= ROWS()) return;
     const u = units.find(u => u.hp > 0 && u.x === cx && u.y === cy);
     if (u) onUnitRightClick?.(u, e);
     else   onCellRightClick?.(cx, cy, e);
-  }, [cam, mapOX, mapOY, units, onCellRightClick, onUnitRightClick]);
+  }, [cellFromClient, units, onCellRightClick, onUnitRightClick]);
 
   const handleMapHover = useCallback((e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = Math.floor((e.clientX - rect.left - mapOX - cam.x) / TILE);
-    const cy = Math.floor((e.clientY - rect.top - mapOY - cam.y) / TILE);
+    if (Date.now() - lastTouchRef.current < 600) return;
+    const { cx, cy } = cellFromClient(e.clientX, e.clientY, e.currentTarget);
     if (cx >= 0 && cy >= 0 && cx < COLS() && cy < ROWS()) onHover?.(cx, cy);
-  }, [cam, mapOX, mapOY, onHover]);
+  }, [cellFromClient, onHover]);
+
+  // ─── タッチ（スマホ）: タップ=左クリック / 長押し=右クリック / ドラッグ=パン ───
+  const handleTouchStart = useCallback((e) => {
+    lastTouchRef.current = Date.now();
+    if (e.touches.length !== 1) { clearLongPress(); touchRef.current = null; return; }
+    const t = e.touches[0];
+    const el = e.currentTarget;
+    touchRef.current = { sx: t.clientX, sy: t.clientY, camX: cam.x, camY: cam.y, moved: false, longFired: false, el };
+    clearLongPress();
+    longPressTimerRef.current = setTimeout(() => {
+      const tr = touchRef.current;
+      if (!tr || tr.moved) return;
+      tr.longFired = true;
+      const { cx, cy } = cellFromClient(tr.sx, tr.sy, el);
+      if (cx < 0 || cy < 0 || cx >= COLS() || cy >= ROWS()) return;
+      const u = units.find(u => u.hp > 0 && u.x === cx && u.y === cy);
+      // App 側の座標計算用に clientX/Y を持つ疑似イベントを渡す
+      const pseudo = { clientX: tr.sx, clientY: tr.sy, preventDefault() {} };
+      if (u) onUnitRightClick?.(u, pseudo);
+      else   onCellRightClick?.(cx, cy, pseudo);
+    }, 500);
+  }, [cam, cellFromClient, units, onCellRightClick, onUnitRightClick]);
+
+  const handleTouchMove = useCallback((e) => {
+    lastTouchRef.current = Date.now();
+    const tr = touchRef.current;
+    if (!tr || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const el = tr.el;
+    const rect = el.getBoundingClientRect();
+    const scale = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    const dx = (t.clientX - tr.sx) / scale;
+    const dy = (t.clientY - tr.sy) / scale;
+    if (!tr.moved && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      tr.moved = true;
+      clearLongPress();
+    }
+    if (tr.moved) {
+      const mw = MAP_W(), mh = MAP_H();
+      setCam({
+        x: mw <= GW ? 0 : Math.max(GW - mw, Math.min(0, tr.camX + dx)),
+        y: mh <= GH ? 0 : Math.max(GH - mh, Math.min(0, tr.camY + dy)),
+      });
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    lastTouchRef.current = Date.now();
+    clearLongPress();
+    const tr = touchRef.current;
+    touchRef.current = null;
+    if (!tr || tr.longFired || tr.moved) return;
+    const { cx, cy } = cellFromClient(tr.sx, tr.sy, tr.el);
+    if (cx < 0 || cy < 0 || cx >= COLS() || cy >= ROWS()) return;
+    const u = units.find(u => u.hp > 0 && u.x === cx && u.y === cy);
+    if (u) onUnitClick?.(u);
+    else   onCellClick?.(cx, cy);
+  }, [cellFromClient, units, onCellClick, onUnitClick]);
 
   // ─── cellハイライトセット ───
   const moveSet  = new Set((moveCells  || []).map(c => `${c.x},${c.y}`));
@@ -219,11 +297,17 @@ export default function MapView({
       style={{
         position: 'absolute', inset: 0, overflow: 'hidden',
         fontFamily: "'Noto Sans JP','Hiragino Sans',sans-serif",
+        touchAction: 'none',          // ブラウザのスクロール/ズームを無効化（自前でパン制御）
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',   // iOS長押しの選択メニューを抑止
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={(e) => { handleMouseMove(e); handleMapHover(e); }}
       onMouseUp={handleMouseUp}
       onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       {/* === マップ本体 === */}
       <div style={{
