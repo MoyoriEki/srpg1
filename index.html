@@ -6,6 +6,12 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0a0e1e" />
+  <meta name="application-name" content="SRPG Proto" />
+  <meta name="apple-mobile-web-app-title" content="SRPG Proto" />
+  <link rel="manifest" href="/srpg1/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/srpg1/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/srpg1/icons/icon-192.png" />
   <title>SRPG Proto 2.0</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,5 +28,13 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
+  <script>
+    // PWA: Service Worker 登録（Android で「アプリとしてインストール」可能に）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/srpg1/sw.js', { scope: '/srpg1/' }).catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
