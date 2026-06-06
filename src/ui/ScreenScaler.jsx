@@ -27,18 +27,29 @@ export default function ScreenScaler({ children }) {
   const scale = Math.min(vp.w / GW, vp.h / GH);
   const portrait = vp.h > vp.w;
 
+  // 表示サイズを整数pxに切り上げ、コンテンツをその箱にぴったり合わせる。
+  // 端数倍率のままだと上端などにサブピクセルのAA明線（1pxの白ライン）が出るため、
+  // 箱を整数サイズ・整数座標にして端を device pixel に揃える。
+  const dispW = Math.ceil(GW * scale);
+  const dispH = Math.ceil(GH * scale);
+  const left = Math.round((vp.w - dispW) / 2);
+  const top = Math.round((vp.h - dispH) / 2);
+
   return (
     <div style={{
       position: 'fixed', inset: 0, overflow: 'hidden',
       background: '#0a0e1e',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      {/* スケール後のサイズ分の場所を確保して中央寄せ */}
-      <div style={{ width: GW * scale, height: GH * scale, position: 'relative' }}>
+      {/* 整数サイズ・整数座標の箱。コンテンツを非等倍でぴったり充填し端のAA明線を防ぐ */}
+      <div style={{
+        position: 'absolute', left, top, width: dispW, height: dispH,
+        overflow: 'hidden', background: '#0a0e1e',
+      }}>
         <div style={{
           width: GW, height: GH,
           position: 'absolute', left: 0, top: 0,
-          transform: `scale(${scale})`, transformOrigin: 'top left',
+          transform: `scale(${dispW / GW}, ${dispH / GH})`,
+          transformOrigin: 'top left',
         }}>
           {children}
         </div>
