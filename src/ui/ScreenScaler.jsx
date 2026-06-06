@@ -27,28 +27,31 @@ export default function ScreenScaler({ children }) {
   const scale = Math.min(vp.w / GW, vp.h / GH);
   const portrait = vp.h > vp.w;
 
-  // 表示サイズを整数pxに切り上げ、コンテンツをその箱にぴったり合わせる。
-  // 端数倍率のままだと上端などにサブピクセルのAA明線（1pxの白ライン）が出るため、
-  // 箱を整数サイズ・整数座標にして端を device pixel に揃える。
+  // 端のAA明線（1pxの白ライン）対策。
+  // 端数倍率＋端数 devicePixelRatio だとコンテンツ端がデバイスピクセルに乗らず、
+  // 明るいマップ上端と暗い背景の境界にハーフピクセルの明線が出る。
+  // → コンテンツを OVER px 外側へオーバースキャンし、overflow:hidden の箱でクリップ。
+  //    端の境界そのものを画面外へ追い出すことで明線を消す（箱背景は背景同色で不可視）。
   const dispW = Math.ceil(GW * scale);
   const dispH = Math.ceil(GH * scale);
   const left = Math.round((vp.w - dispW) / 2);
   const top = Math.round((vp.h - dispH) / 2);
+  const OVER = 1; // オーバースキャン量（CSS px）
 
   return (
     <div style={{
       position: 'fixed', inset: 0, overflow: 'hidden',
       background: '#0a0e1e',
     }}>
-      {/* 整数サイズ・整数座標の箱。コンテンツを非等倍でぴったり充填し端のAA明線を防ぐ */}
+      {/* 整数サイズ・整数座標の箱。中身を少し大きく充填し、端をクリップしてAA明線を防ぐ */}
       <div style={{
         position: 'absolute', left, top, width: dispW, height: dispH,
         overflow: 'hidden', background: '#0a0e1e',
       }}>
         <div style={{
           width: GW, height: GH,
-          position: 'absolute', left: 0, top: 0,
-          transform: `scale(${dispW / GW}, ${dispH / GH})`,
+          position: 'absolute', left: -OVER, top: -OVER,
+          transform: `scale(${(dispW + 2 * OVER) / GW}, ${(dispH + 2 * OVER) / GH})`,
           transformOrigin: 'top left',
         }}>
           {children}
