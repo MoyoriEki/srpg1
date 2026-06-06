@@ -3,6 +3,15 @@ export const TILE = 48;
 export const GW = 1280;
 export const GH = 720;
 
+// ═══ 表示スケール ═══
+// UI/フォントの基本サイズ拡大率（全デバイス共通でデカくする分）。
+// マップとは独立。立ち絵等を無闇に引き伸ばさないため、拡大はUI/マップを別々に管理する。
+export const UI_SCALE = 1.7;
+// モバイル時のマップ拡大率（マップ&ユニットのみ。15マス→約7.5マス映る）
+export const MAP_ZOOM_MOBILE = 2;
+// フィット後scaleがこの値未満なら「画面が小さい」=モバイル扱いでマップを拡大
+export const MAP_ZOOM_THRESHOLD = 0.7;
+
 // 経験値
 export const EXP_PER_HIT = 5;
 export const EXP_POOL = 20;

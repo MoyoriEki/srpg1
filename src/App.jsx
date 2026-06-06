@@ -103,9 +103,22 @@ export default function App() {
   const busyRef = useRef(false);
   const popKeyRef = useRef(0);
   const rootRef = useRef(null);
+  const mapApiRef = useRef(null);    // MapViewが公開するセル→画面座標API
   const usedMovCostRef = useRef(0);  // noAction再移動用: 累積移動コスト
   const noActionPosRef = useRef(null); // noAction再移動前の位置
   const lastMoveCostRef = useRef(0);  // 最後の移動セグメントのコスト
+
+  // ════════════════════════════════════════════
+  // アクションメニュー位置（マップ拡大/パンを加味してユニット右脇に出す）
+  // ════════════════════════════════════════════
+  function menuAnchorFor(cx, cy) {
+    const a = mapApiRef.current?.cellMenuAnchor?.(cx, cy);
+    const base = a || { x: (cx + 1) * TILE + 168, y: cy * TILE + 8 };
+    return {
+      x: Math.max(4, Math.min(base.x, GW - 300)),
+      y: Math.max(4, Math.min(base.y, GH - 220)),
+    };
+  }
 
   // ════════════════════════════════════════════
   // ログ追加
@@ -400,7 +413,7 @@ export default function App() {
       if (sel) {
         setMoveCells([]);
         setMode('action');
-        setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 });
+        setMenuPos(menuAnchorFor(sel.x, sel.y));
       }
       return;
     }
@@ -409,7 +422,7 @@ export default function App() {
         // 自分をクリック → その場でアクションメニュー
         setMoveCells([]);
         setMode('action');
-        setMenuPos({ x: (u.x + 1) * TILE + 168, y: u.y * TILE + 8 });
+        setMenuPos(menuAnchorFor(u.x, u.y));
       } else {
         selectUnit(u);
       }
@@ -452,7 +465,7 @@ export default function App() {
         // noAction再移動中: 範囲外→メニュー表示（移動せず現在地で行動）
         setMoveCells([]);
         setMode('action');
-        setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 });
+        setMenuPos(menuAnchorFor(sel.x, sel.y));
       } else {
         clearSelection();
       }
@@ -543,7 +556,7 @@ export default function App() {
     setMoveCells([]);
     setPathCells([]);
     setMode('action');
-    setMenuPos({ x: (tx + 1) * TILE + 168, y: ty * TILE + 8 });
+    setMenuPos(menuAnchorFor(tx, ty));
     busyRef.current = false;
   }
 
@@ -689,7 +702,7 @@ export default function App() {
       setHealCells([]);
       setChosenTech(null);
       setMode('action');
-      setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 });
+      setMenuPos(menuAnchorFor(sel.x, sel.y));
     } else if (mode === 'action' && noActionPosRef.current) {
       // 再移動後（or その場クリック後）→ 再移動前の位置に戻す
       const pos = noActionPosRef.current;
@@ -1036,7 +1049,7 @@ export default function App() {
       if (mv.length <= 1) {
         setMoveCells([]);
         setMode('action');
-        setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 });
+        setMenuPos(menuAnchorFor(sel.x, sel.y));
       } else {
         setMoveCells(mv);
         setMode('select');
@@ -1045,7 +1058,7 @@ export default function App() {
     } else {
       setMoveCells([]);
       setMode('action');
-      setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 });
+      setMenuPos(menuAnchorFor(sel.x, sel.y));
     }
   }
 
@@ -1572,7 +1585,7 @@ export default function App() {
     if (mode === 'select' && selId) {
       if (!origPos) {
         const sel = units.find(u => u.id === selId);
-        if (sel) { setMoveCells([]); setMode('action'); setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 }); }
+        if (sel) { setMoveCells([]); setMode('action'); setMenuPos(menuAnchorFor(sel.x, sel.y)); }
       } else { clearSelection(); }
       return;
     }
@@ -1615,7 +1628,7 @@ export default function App() {
     if (mode === 'select' && selId) {
       if (!origPos) {
         const sel = units.find(unit => unit.id === selId);
-        if (sel) { setMoveCells([]); setMode('action'); setMenuPos({ x: (sel.x + 1) * TILE + 168, y: sel.y * TILE + 8 }); }
+        if (sel) { setMoveCells([]); setMode('action'); setMenuPos(menuAnchorFor(sel.x, sel.y)); }
       } else { clearSelection(); }
       return;
     }
@@ -1701,6 +1714,7 @@ export default function App() {
       <SettingsPanel />
       {/* マップ */}
       <MapView
+        ref={mapApiRef}
         units={units} phase={phase} terrain={terrain}
         moveCells={moveCells} atkCells={atkCells} healCells={healCells}
         pathCells={pathCells} deployZone={deployZone}

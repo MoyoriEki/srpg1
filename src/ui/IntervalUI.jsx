@@ -4,6 +4,7 @@ import { countSlotTechs, countSlotSkills, getRemovableParts } from '../engine/dr
 import { getSlots } from '../engine/units.js';
 import UnitChip from './UnitChip.jsx';
 import SwapSelector from './SwapSelector.jsx';
+import { ModalScale } from './uiScale.jsx';
 
 const TAG_LABEL = { fire: '炎', water: '水', wind: '風', light: '光', dark: '闇' };
 const TAG_COL   = { fire: '#ef4444', water: '#3b82f6', wind: '#22c55e', light: '#fbbf24', dark: '#a78bfa' };
@@ -34,6 +35,7 @@ export default function IntervalUI({
       position: 'absolute', inset: 0, background: 'rgba(10,14,30,0.97)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300,
     }}>
+      <ModalScale>
       <div style={{
         width: 640, background: 'linear-gradient(135deg,#141827,#1a1f35)',
         borderRadius: 12, padding: 24,
@@ -129,6 +131,7 @@ export default function IntervalUI({
           </>
         )}
       </div>
+      </ModalScale>
     </div>
   );
 }
