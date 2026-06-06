@@ -157,14 +157,14 @@ function MapView({
   const mw = MAP_W() * mapZoom;
   const mh = MAP_H() * mapZoom;
   // マップが画面に収まるなら中央寄せ、はみ出すなら左上基準でcamに任せる
-  const mapOX = mw <= GW ? (GW - mw) / 2 : 0;
-  const mapOY = mh <= GH ? (GH - mh) / 2 : 0;
+  const mapOX = mw <= GW ? Math.round((GW - mw) / 2) : 0;
+  const mapOY = mh <= GH ? Math.round((GH - mh) / 2) : 0;
 
   // マップサイズ/拡大率が変わったらカメラを中央に再配置
   useEffect(() => {
     setCam({
-      x: mw <= GW ? 0 : (GW - mw) / 2,
-      y: mh <= GH ? 0 : (GH - mh) / 2,
+      x: mw <= GW ? 0 : Math.round((GW - mw) / 2),
+      y: mh <= GH ? 0 : Math.round((GH - mh) / 2),
     });
   }, [mw, mh]);
 
@@ -181,10 +181,12 @@ function MapView({
   // クライアント座標→セル変換（CSSスケール補正込み: スマホ縮小表示対応）
   const cellFromClient = useCallback((clientX, clientY, el) => {
     const rect = el.getBoundingClientRect();
-    // transform:scale 下では rect は縮小済み。offsetWidth は論理幅なので比でスケールを得る
-    const scale = el.offsetWidth ? rect.width / el.offsetWidth : 1;
-    const lx = (clientX - rect.left) / scale;
-    const ly = (clientY - rect.top) / scale;
+    // transform:scale 下では rect は縮小済み。offset寸法は論理サイズなので比でスケールを得る
+    // （ScreenScalerが非等倍でフィットさせるためX/Yを別々に補正）
+    const sx = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    const sy = el.offsetHeight ? rect.height / el.offsetHeight : 1;
+    const lx = (clientX - rect.left) / sx;
+    const ly = (clientY - rect.top) / sy;
     const cx = Math.floor((lx - mapOX - cam.x) / TZ);
     const cy = Math.floor((ly - mapOY - cam.y) / TZ);
     return { cx, cy };
