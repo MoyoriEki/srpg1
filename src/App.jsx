@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   TILE, GW, GH, STEP_MS, NUM_STAGES, PARTY_MAX,
   INITIAL_SORTIE, HP_RECOVERY_PCT, LEVEL_CAP, COUNTER_DEFS,
+  MAP_ZOOM_MOBILE,
 } from './engine/constants.js';
 import {
   createRoster, createEnemiesFromMap, createEnemyUnit, createMinion, resetUid,
@@ -26,7 +27,9 @@ import { playBGM, stopBGM } from './engine/audio.js';
 import itemsData from './data/items.json';
 
 import ScreenScaler from './ui/ScreenScaler.jsx';
+import useMapZoom from './ui/useMapZoom.js';
 import SettingsPanel from './ui/SettingsPanel.jsx';
+import ZoomToggle from './ui/ZoomToggle.jsx';
 import MapView from './ui/MapView.jsx';
 import LogPanel from './ui/LogPanel.jsx';
 import { ActionMenu, BattlePreview, ContextMenu } from './ui/BattleUI.jsx';
@@ -74,6 +77,12 @@ export default function App() {
   const [ctxMenu, setCtxMenu]     = useState(null);
   const [enemyRanges, setEnemyRanges] = useState([]);
   const [rangeEnemyIds, setRangeEnemyIds] = useState([]);
+
+  // --- マップ表示倍率（A:等倍=従来PC / B:今回追加した倍率）---
+  const autoZoom = useMapZoom();             // 画面サイズによる自動判定
+  const [zoomManual, setZoomManual] = useState(null); // null=自動、それ以外は手動指定
+  const mapZoom = zoomManual ?? autoZoom;
+  const toggleZoom = () => setZoomManual(mapZoom === MAP_ZOOM_MOBILE ? 1 : MAP_ZOOM_MOBILE);
 
   // --- アニメーション ---
   const [dmgPops, setDmgPops]     = useState([]);
@@ -1715,6 +1724,7 @@ export default function App() {
       {/* マップ */}
       <MapView
         ref={mapApiRef}
+        mapZoom={mapZoom}
         units={units} phase={phase} terrain={terrain}
         moveCells={moveCells} atkCells={atkCells} healCells={healCells}
         pathCells={pathCells} deployZone={deployZone}
@@ -1733,6 +1743,9 @@ export default function App() {
 
       {/* ログ */}
       <LogPanel log={log} phase={phase} stage={stage} turn={turn} />
+
+      {/* マップ倍率トグル（右下） */}
+      <ZoomToggle zoom={mapZoom} onToggle={toggleZoom} />
 
       {/* 配置UI */}
       {phase === 'deploy' && (

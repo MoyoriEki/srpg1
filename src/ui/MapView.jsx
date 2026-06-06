@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { TILE, GW, GH, STEP_MS, COUNTER_DEFS, UI_SCALE } from '../engine/constants.js';
-import useMapZoom from './useMapZoom.js';
 import { scaledStyle } from './uiScale.jsx';
 
 // バフ/デバフ系カウンター名セット（マーカー・ツールチップ表示用）
@@ -80,10 +79,9 @@ function MapView({
   dmgPops, shaking,
   onCellClick, onCellRightClick, onUnitClick, onUnitRightClick,
   onHover, onStatScreen,
-  banner, menuOpen,
+  banner, menuOpen, mapZoom = 1,
 }, ref) {
-  // ─── マップ拡大率（モバイルのみ2倍。マップ&ユニットだけに適用）───
-  const mapZoom = useMapZoom();
+  // mapZoom: マップ&ユニットだけに適用する拡大率（App側で自動判定/手動切替）
 
   // ─── カメラドラッグ ───
   const [cam, setCam] = useState({ x: 0, y: 0 });
