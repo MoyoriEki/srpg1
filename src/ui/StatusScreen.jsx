@@ -6,6 +6,7 @@ import { getClassTrait } from '../engine/classChange.js';
 import { getTechRange, fmtRange } from '../engine/pathfinding.js';
 import { canUseTech } from '../engine/combat.js';
 import UnitChip from './UnitChip.jsx';
+import { ModalScale } from './uiScale.jsx';
 
 const TAG_LABEL = { fire: '炎', water: '水', wind: '風', light: '光', dark: '闇', none: '無' };
 const TAG_COL   = { fire: '#ef4444', water: '#3b82f6', wind: '#22c55e', light: '#fbbf24', dark: '#a78bfa', none: '#94a3b8' };
@@ -55,6 +56,8 @@ export default function StatusScreen({ unit, units, onClose }) {
       zIndex: 350, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 8,
     }}>
+      <ModalScale>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: 820, background: 'rgba(18,22,40,0.97)',
         border: `2px solid ${bCol}`, borderRadius: 10, overflow: 'hidden',
@@ -253,6 +256,8 @@ export default function StatusScreen({ unit, units, onClose }) {
           : <div style={{ fontSize: 12, color: '#3a3f52' }}>項目にカーソルを合わせると説明が表示されます</div>
         }
       </div>
+      </div>
+      </ModalScale>
     </div>
   );
 }

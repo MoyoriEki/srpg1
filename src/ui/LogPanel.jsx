@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { scaledStyle } from './uiScale.jsx';
 
 const TYPE_COLOR = {
   phase:    '#facc15',
@@ -27,7 +28,7 @@ export default function LogPanel({ log, phase, stage, turn }) {
   const phaseColor = phase === 'deploy' ? '#facc15' : phase === 'player' ? '#60a5fa' : '#f87171';
 
   return (
-    <div style={{ position: 'absolute', top: 8, right: 10, width: 240, zIndex: 40 }}>
+    <div style={scaledStyle({ position: 'absolute', top: 8, right: 10, width: 240, zIndex: 40 }, 'top right')}>
       <div
         onClick={() => setOpen(p => !p)}
         style={{

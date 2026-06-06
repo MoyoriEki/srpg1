@@ -1,5 +1,7 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { TILE, GW, GH, STEP_MS, COUNTER_DEFS } from '../engine/constants.js';
+import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { TILE, GW, GH, STEP_MS, COUNTER_DEFS, UI_SCALE } from '../engine/constants.js';
+import useMapZoom from './useMapZoom.js';
+import { scaledStyle } from './uiScale.jsx';
 
 // バフ/デバフ系カウンター名セット（マーカー・ツールチップ表示用）
 const BUFF_COUNTERS = new Set(
@@ -70,7 +72,7 @@ function popAnim(type) {
   return 's-dmg 0.9s ease-out forwards';
 }
 
-export default function MapView({
+function MapView({
   units, phase, terrain,
   moveCells, atkCells, healCells, pathCells,
   deployZone, enemyRanges, rangeEnemyIds,
@@ -79,7 +81,10 @@ export default function MapView({
   onCellClick, onCellRightClick, onUnitClick, onUnitRightClick,
   onHover, onStatScreen,
   banner, menuOpen,
-}) {
+}, ref) {
+  // ─── マップ拡大率（モバイルのみ2倍。マップ&ユニットだけに適用）───
+  const mapZoom = useMapZoom();
+
   // ─── カメラドラッグ ───
   const [cam, setCam] = useState({ x: 0, y: 0 });
   const dragRef = useRef(null);
@@ -149,8 +154,31 @@ export default function MapView({
     }
   }, [tileOverlay, imgsReady]);
 
-  const mapOX = (GW - MAP_W()) / 2;
-  const mapOY = (GH - MAP_H()) / 2;
+  // ─── マップ拡大を加味した実効タイルサイズ・配置（GW×GH論理座標系）───
+  const TZ = TILE * mapZoom;
+  const mw = MAP_W() * mapZoom;
+  const mh = MAP_H() * mapZoom;
+  // マップが画面に収まるなら中央寄せ、はみ出すなら左上基準でcamに任せる
+  const mapOX = mw <= GW ? (GW - mw) / 2 : 0;
+  const mapOY = mh <= GH ? (GH - mh) / 2 : 0;
+
+  // マップサイズ/拡大率が変わったらカメラを中央に再配置
+  useEffect(() => {
+    setCam({
+      x: mw <= GW ? 0 : (GW - mw) / 2,
+      y: mh <= GH ? 0 : (GH - mh) / 2,
+    });
+  }, [mw, mh]);
+
+  // App側がアクションメニュー位置を計算できるよう、セル→画面座標を公開
+  useImperativeHandle(ref, () => ({
+    cellMenuAnchor(cx, cy) {
+      return {
+        x: mapOX + cam.x + (cx + 1) * TZ + 4,
+        y: mapOY + cam.y + cy * TZ,
+      };
+    },
+  }), [mapOX, mapOY, cam, TZ]);
 
   // クライアント座標→セル変換（CSSスケール補正込み: スマホ縮小表示対応）
   const cellFromClient = useCallback((clientX, clientY, el) => {
@@ -159,10 +187,10 @@ export default function MapView({
     const scale = el.offsetWidth ? rect.width / el.offsetWidth : 1;
     const lx = (clientX - rect.left) / scale;
     const ly = (clientY - rect.top) / scale;
-    const cx = Math.floor((lx - mapOX - cam.x) / TILE);
-    const cy = Math.floor((ly - mapOY - cam.y) / TILE);
+    const cx = Math.floor((lx - mapOX - cam.x) / TZ);
+    const cy = Math.floor((ly - mapOY - cam.y) / TZ);
     return { cx, cy };
-  }, [cam, mapOX, mapOY]);
+  }, [cam, mapOX, mapOY, TZ]);
 
   // タッチ由来の合成マウスイベントを無視するためのフラグ
   const lastTouchRef = useRef(0);
@@ -187,12 +215,12 @@ export default function MapView({
     const dx = (e.clientX - dragRef.current.sx) / scale;
     const dy = (e.clientY - dragRef.current.sy) / scale;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragRef.current.moved = true;
-    const mw = MAP_W(), mh = MAP_H();
+    const mw = MAP_W() * mapZoom, mh = MAP_H() * mapZoom;
     setCam({
       x: mw <= GW ? 0 : Math.max(GW - mw, Math.min(0, dragRef.current.camX + dx)),
       y: mh <= GH ? 0 : Math.max(GH - mh, Math.min(0, dragRef.current.camY + dy)),
     });
-  }, []);
+  }, [mapZoom]);
 
   const handleMouseUp = useCallback((e) => {
     const d = dragRef.current;
@@ -260,13 +288,13 @@ export default function MapView({
       clearLongPress();
     }
     if (tr.moved) {
-      const mw = MAP_W(), mh = MAP_H();
+      const mw = MAP_W() * mapZoom, mh = MAP_H() * mapZoom;
       setCam({
         x: mw <= GW ? 0 : Math.max(GW - mw, Math.min(0, tr.camX + dx)),
         y: mh <= GH ? 0 : Math.max(GH - mh, Math.min(0, tr.camY + dy)),
       });
     }
-  }, []);
+  }, [mapZoom]);
 
   const handleTouchEnd = useCallback((e) => {
     lastTouchRef.current = Date.now();
@@ -309,11 +337,13 @@ export default function MapView({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* === マップ本体 === */}
+      {/* === マップ本体（モバイルではmapZoom倍に拡大。内部座標はTILE=48のまま）=== */}
       <div style={{
         position: 'absolute',
         left: mapOX + cam.x, top: mapOY + cam.y,
         width: MAP_W(), height: MAP_H(),
+        transform: mapZoom !== 1 ? `scale(${mapZoom})` : undefined,
+        transformOrigin: 'top left',
       }}>
         {/* 地形タイル（基盤色のみ） */}
         {terrain.map((row, ry) => row.map((tid, cx) => (
@@ -491,25 +521,25 @@ export default function MapView({
         if (!hu) return null;
         const hpPct = hu.hp / hu.maxHp;
         const hpCol = hpPct > 0.5 ? '#4ade80' : hpPct > 0.25 ? '#facc15' : '#ef4444';
-        const ux = mapOX + cam.x + hu.x * TILE;
-        const uy = mapOY + cam.y + hu.y * TILE;
+        const ux = mapOX + cam.x + hu.x * TZ;
+        const uy = mapOY + cam.y + hu.y * TZ;
         const tooltipW = 180;
         const tooltipH = 80;
         // ユニットの上に表示。画面上端に近ければ下に
-        const px = Math.max(4, Math.min(ux + (TILE - tooltipW) / 2, GW - tooltipW - 4));
+        const px = Math.max(4, Math.min(ux + (TZ - tooltipW) / 2, GW - tooltipW - 4));
         const aboveY = uy - tooltipH - 8;
-        const belowY = uy + TILE + 8;
+        const belowY = uy + TZ + 8;
         const py = aboveY >= 4 ? aboveY : belowY;
         return (
-          <div style={{
+          <div style={scaledStyle({
             position: 'absolute',
             left: px, top: Math.max(py, 4),
             background: 'rgba(16,20,36,0.95)', padding: '6px 10px',
             borderRadius: 6, border: `1px solid ${hu.team === 'player' ? 'rgba(59,130,246,0.4)' : 'rgba(239,68,68,0.4)'}`,
             boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
-            zIndex: 50, pointerEvents: 'none', animation: 's-slin 0.1s ease-out',
+            zIndex: 50, pointerEvents: 'none',
             minWidth: 130,
-          }}>
+          }, py === aboveY ? 'bottom left' : 'top left')}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
               <UnitChip unit={hu} size={24} />
               <span style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{hu.name}</span>
@@ -550,12 +580,12 @@ export default function MapView({
 
       {/* === 地形情報ツールチップ === */}
       {hoverCell && (
-        <div style={{
+        <div style={scaledStyle({
           position: 'absolute', bottom: 8, left: 10,
           background: 'rgba(12,15,26,0.9)', padding: '4px 10px',
           borderRadius: 4, border: '1px solid #1e293b',
           fontSize: 11, color: '#8b93a8', zIndex: 45,
-        }}>
+        }, 'bottom left')}>
           {getTerrainName(terrain[hoverCell.y]?.[hoverCell.x])}
           {getTerrainDef(hoverCell.x, hoverCell.y) > 0 &&
             <span style={{ color: '#4ade80', marginLeft: 6 }}>
@@ -570,7 +600,7 @@ export default function MapView({
       {banner && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%',
-          transform: 'translate(-50%,-50%)', zIndex: 200,
+          transform: `translate(-50%,-50%) scale(${UI_SCALE})`, zIndex: 200,
           pointerEvents: 'none',
         }}>
           <div style={{
@@ -594,3 +624,5 @@ export default function MapView({
     </div>
   );
 }
+
+export default forwardRef(MapView);

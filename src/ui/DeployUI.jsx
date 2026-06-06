@@ -1,6 +1,7 @@
 import React from 'react';
 import { INITIAL_SORTIE, PARTY_MAX } from '../engine/constants.js';
 import UnitChip from './UnitChip.jsx';
+import { scaledStyle } from './uiScale.jsx';
 
 /**
  * DeployUI — 配置フェーズUI
@@ -19,13 +20,12 @@ export default function DeployUI({ roster, deployCount, sortieLimit, deploySelId
   return (
     <div
       onMouseDown={e => e.stopPropagation()}
-      style={{
+      style={scaledStyle({
         position: 'absolute', top: 8, left: 10, width: 250, zIndex: 60,
         background: 'rgba(18,22,40,0.95)',
         border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8,
         boxShadow: '0 4px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
-        animation: 's-fin 0.2s ease-out',
-      }}
+      }, 'top left')}
     >
       {/* ── ヘッダ ── */}
       <div style={{
@@ -41,7 +41,7 @@ export default function DeployUI({ roster, deployCount, sortieLimit, deploySelId
       </div>
 
       {/* ── ロスター一覧 ── */}
-      <div style={{ padding: '6px 8px', maxHeight: 340, overflowY: 'auto' }}>
+      <div style={{ padding: '6px 8px', maxHeight: 280, overflowY: 'auto' }}>
         {roster.map(u => {
           const isSel = deploySelId === u.id;
           const isDeployed = u.deployed;

@@ -4,6 +4,7 @@ import { countSlotTechs, countSlotSkills, getRemovableParts } from '../engine/dr
 import { getTechRange, fmtRange } from '../engine/pathfinding.js';
 import UnitChip from './UnitChip.jsx';
 import SwapSelector from './SwapSelector.jsx';
+import { ModalScale } from './uiScale.jsx';
 import techs from '../data/techs.json';
 
 const TAG_LABEL = { fire: '炎', water: '水', wind: '風', light: '光', dark: '闇', none: '無' };
@@ -85,6 +86,7 @@ export default function DraftUI({ unit, gains, parts, ccOptions, units, onPickPa
       position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
     }}>
+      <ModalScale>
       <div style={{
         background: 'linear-gradient(135deg,#141827,#1a1f35)',
         borderRadius: 12, padding: 24, width: 720, maxHeight: '92vh', overflowY: 'auto',
@@ -280,6 +282,7 @@ export default function DraftUI({ unit, gains, parts, ccOptions, units, onPickPa
           </div>
         </div>
       </div>
+      </ModalScale>
     </div>
   );
 }

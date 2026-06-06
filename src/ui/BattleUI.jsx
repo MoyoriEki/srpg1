@@ -8,6 +8,7 @@ import { getTechRange, fmtRange, getAtkCells, manhattan } from '../engine/pathfi
 import { getGrantedTechs } from '../engine/skills.js';
 import { getTerrainDef } from '../engine/map.js';
 import UnitChip from './UnitChip.jsx';
+import { scaledStyle } from './uiScale.jsx';
 
 // ─── メニューボタン ───
 function MBtn({ children, onClick, disabled, dim, warn, heal, sub }) {
@@ -63,13 +64,12 @@ export function ActionMenu({
     <div
       onMouseDown={e => e.stopPropagation()}
       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); onCancel?.(); }}
-      style={{
+      style={scaledStyle({
         position: 'absolute', left: menuPos.x, top: menuPos.y,
         background: 'rgba(20,24,39,0.95)', border: '1px solid #334155',
         borderRadius: 6, padding: 4, minWidth: 170, zIndex: 60,
-        animation: 's-fin 0.1s ease-out',
         boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-      }}
+      }, 'top left')}
     >
       {/* 通常攻撃 */}
       {plainRange.max > 0 && (
@@ -177,14 +177,14 @@ export function BattlePreview({ attacker, defender, tech, units }) {
   return (
     <div
       onMouseDown={e => e.stopPropagation()}
-      style={{
-        position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      style={scaledStyle({
+        position: 'absolute', bottom: 20, left: '50%',
         background: 'linear-gradient(180deg,rgba(16,20,36,0.97),rgba(10,12,24,0.97))',
         borderRadius: 12, padding: '20px 52px',
         display: 'flex', alignItems: 'center', gap: 36, zIndex: 55,
         border: '1px solid rgba(239,68,68,0.3)',
         boxShadow: '0 6px 36px rgba(0,0,0,0.7),0 0 20px rgba(239,68,68,0.08)',
-      }}
+      }, 'bottom center', 'translateX(-50%)')}
     >
       {/* 攻撃側 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -247,13 +247,12 @@ export function ContextMenu({ pos, onEndTurn, onClearMarks, onClose, hasMarks })
   return (
     <div
       onMouseDown={e => e.stopPropagation()}
-      style={{
+      style={scaledStyle({
         position: 'absolute',
-        left: Math.min(pos.x, GW - 140), top: Math.min(pos.y, GH - 120),
+        left: Math.min(pos.x, GW - 240), top: Math.min(pos.y, GH - 200),
         background: 'rgba(20,24,39,0.95)', border: '1px solid #334155',
         borderRadius: 6, padding: 4, minWidth: 120, zIndex: 70,
-        animation: 's-fin 0.1s ease-out',
-      }}
+      }, 'top left')}
     >
       <MBtn onClick={onEndTurn}>ターン終了</MBtn>
       {hasMarks && <MBtn warn onClick={onClearMarks}>マーキング解除</MBtn>}
