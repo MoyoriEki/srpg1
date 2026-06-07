@@ -1,6 +1,6 @@
 // ═══ ゲーム全体の定数 ═══
 // アプリのバージョン（右上の設定パネルに表示。どのビルドが動いてるか確認用）
-export const APP_VERSION = 'v2.0.6';
+export const APP_VERSION = 'v2.0.7';
 // 上端白ライン切り分け用の診断オーバーレイ。原因特定後に false に戻す。
 export const DEBUG_TOP_SENTINEL = false;
 export const TILE = 48;

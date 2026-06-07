@@ -2,12 +2,12 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <!-- viewport-fit=cover は外す。standalone でダークなステータスバーの「下」にコンテンツを置き、
-       Chrome 固有の最上端白ライン（没入時にWeb領域外を白で塗る挙動）を回避する。 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <!-- fullscreen 没入で運用。上端1pxの白ラインは Chrome 固有のレンダリング挙動で、
+       Web側からは確実に消せないと判明したため（Samsung Internet 等では出ない）割り切る。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#0a0e1e" />
   <meta name="application-name" content="SRPG Proto" />
   <meta name="apple-mobile-web-app-title" content="SRPG Proto" />
