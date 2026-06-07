@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GW, GH, DEBUG_TOP_SENTINEL } from '../engine/constants.js';
 
 // ════════════════════════════════════════════
@@ -14,13 +14,31 @@ export default function ScreenScaler({ children }) {
     h: typeof window !== 'undefined' ? window.innerHeight : GH,
   }));
 
+  // safe-area-inset の実測値（上端白ライン切り分け用）。
+  // env() の値を hidden プローブの padding 経由で getComputedStyle で読む。
+  const [safe, setSafe] = useState({ top: 0, bottom: 0, left: 0, right: 0 });
+  const probeRef = useRef(null);
+
   useEffect(() => {
     const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
+    const measure = () => {
+      const el = probeRef.current;
+      if (!el) return;
+      const cs = getComputedStyle(el);
+      setSafe({
+        top: parseFloat(cs.paddingTop) || 0,
+        bottom: parseFloat(cs.paddingBottom) || 0,
+        left: parseFloat(cs.paddingLeft) || 0,
+        right: parseFloat(cs.paddingRight) || 0,
+      });
+    };
+    const onAny = () => { onResize(); measure(); };
+    measure();
+    window.addEventListener('resize', onAny);
+    window.addEventListener('orientationchange', onAny);
     return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
+      window.removeEventListener('resize', onAny);
+      window.removeEventListener('orientationchange', onAny);
     };
   }, []);
 
@@ -29,7 +47,6 @@ export default function ScreenScaler({ children }) {
 
   // 端数倍率＋端数 devicePixelRatio 対策のオーバースキャン。
   // コンテンツを OVER px 外側へ伸ばし、overflow:hidden の箱でクリップして端の境界を画面外へ追い出す。
-  // （上端の白ライン本体は html 背景の白透けが原因。index.html で html に背景色を敷いて対処済み）
   const dispW = Math.ceil(GW * scale);
   const dispH = Math.ceil(GH * scale);
   const left = Math.round((vp.w - dispW) / 2);
@@ -56,28 +73,32 @@ export default function ScreenScaler({ children }) {
         </div>
       </div>
 
-      {/* ───── 上端の白ライン（AA明線）対策 ─────
-          原因: 固定1280×720を transform:scale で全画面拡大しており、端末の dpr×scale が
-          半端値（実測 2.8125×0.5333＝1.5px/px）になると、変形レイヤー最上端の1物理pxが
-          コンテンツとコンポジタ既定色（白）をサブピクセル合成し、白い継ぎ目になる。
-          起動ごとにvpの端数が変わるため間欠的に出る。
-          対策: 「変形サブツリーの外側」に不透明ダークの薄いカバーを最上端へ重ね、
-          物理y=0付近の白継ぎ目を塗り潰す（診断ビルドでマゼンタ線が白を覆えたのと同じ原理）。
-          クリップ箱の内側に置いた旧対策(#10/#11)は変形レイヤー境界の外の継ぎ目に届かず無効だった。 */}
-      <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, height: 3,
-        background: '#0a0e1e', zIndex: 100000, pointerEvents: 'none',
+      {/* safe-area 実測用の不可視プローブ（描画には影響しない） */}
+      <div ref={probeRef} style={{
+        position: 'fixed', top: 0, left: 0, width: 0, height: 0,
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+        visibility: 'hidden', pointerEvents: 'none',
       }} />
 
       {/* ───── 診断オーバーレイ（上端白ライン切り分け用 / 通常は無効） ─────
-          ・最上端(y=0)に2pxのマゼンタ線を引く。物理的に画面の一番上。
-            次のスクショで白線がこのマゼンタより「上」なら → うちのDOM外（fullscreen/viewport-fitが犯人）。
-            マゼンタが白線を覆う/白が消えるなら → うちのcontent継ぎ目（transform scaleのAA明線が犯人）。
-          ・実数値も出す（innerW×H / DPR / scale / top / dispH）。端数が継ぎ目を生むので確認用。 */}
+          ・シアン帯 = env(safe-area-inset-top) の領域。これが見えれば「Webの上にバー域がある」＝
+            白線はシステム/Chrome側の確定。高さ0で見えなければ inset 無し＝コンポジタ最上端の継ぎ目。
+          ・マゼンタ1px = Webコンテンツの y=0 マーカー。白線がこの上か中か下かで層を特定。
+          ・数値: vp/dpr/scale/top/dispH に加え、safe-area-inset 実測(T/B/L/R)を表示。 */}
       {DEBUG_TOP_SENTINEL && (
         <>
+          {/* env(safe-area-inset-top) をそのまま高さにしたシアン帯。0なら不可視 */}
           <div style={{
-            position: 'fixed', top: 0, left: 0, right: 0, height: 2,
+            position: 'fixed', top: 0, left: 0, right: 0,
+            height: 'env(safe-area-inset-top)',
+            background: 'rgba(0,255,255,0.6)', zIndex: 99998, pointerEvents: 'none',
+          }} />
+          {/* Webコンテンツ y=0 のマーカー（1px マゼンタ） */}
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, height: 1,
             background: '#ff00ff', zIndex: 99999, pointerEvents: 'none',
           }} />
           <div style={{
@@ -87,7 +108,8 @@ export default function ScreenScaler({ children }) {
             zIndex: 99999, pointerEvents: 'none', whiteSpace: 'pre',
           }}>
             {`vp ${vp.w}x${vp.h}  dpr ${typeof window !== 'undefined' ? window.devicePixelRatio : '?'}\n`}
-            {`scale ${scale.toFixed(4)}  top ${top}  dispH ${dispH}`}
+            {`scale ${scale.toFixed(4)}  top ${top}  dispH ${dispH}\n`}
+            {`safe T${safe.top} B${safe.bottom} L${safe.left} R${safe.right}`}
           </div>
         </>
       )}

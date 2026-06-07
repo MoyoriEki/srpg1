@@ -1,8 +1,8 @@
 // ═══ ゲーム全体の定数 ═══
 // アプリのバージョン（右上の設定パネルに表示。どのビルドが動いてるか確認用）
-export const APP_VERSION = 'v2.0.4';
-// 上端白ライン切り分け用の診断オーバーレイ。原因特定済みのため false。
-export const DEBUG_TOP_SENTINEL = false;
+export const APP_VERSION = 'v2.0.5-debug';
+// 上端白ライン切り分け用の診断オーバーレイ。原因特定後に false に戻す。
+export const DEBUG_TOP_SENTINEL = true;
 export const TILE = 48;
 export const GW = 1280;
 export const GH = 720;
