@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GW, GH } from '../engine/constants.js';
+import { GW, GH, DEBUG_TOP_SENTINEL } from '../engine/constants.js';
 
 // ════════════════════════════════════════════
 // ScreenScaler
@@ -55,6 +55,29 @@ export default function ScreenScaler({ children }) {
           {children}
         </div>
       </div>
+
+      {/* ───── 診断オーバーレイ（上端白ライン切り分け用） ─────
+          ・最上端(y=0)に2pxのマゼンタ線を引く。物理的に画面の一番上。
+            次のスクショで白線がこのマゼンタより「上」なら → うちのDOM外（fullscreen/viewport-fitが犯人）。
+            マゼンタが白線を覆う/白が消えるなら → うちのcontent継ぎ目（transform scaleのAA明線が犯人）。
+          ・実数値も出す（innerW×H / DPR / scale / top / dispH）。端数が継ぎ目を生むので確認用。 */}
+      {DEBUG_TOP_SENTINEL && (
+        <>
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, height: 2,
+            background: '#ff00ff', zIndex: 99999, pointerEvents: 'none',
+          }} />
+          <div style={{
+            position: 'fixed', left: 4, bottom: 4,
+            background: 'rgba(0,0,0,0.7)', color: '#0f0',
+            font: '10px/1.4 monospace', padding: '2px 5px', borderRadius: 3,
+            zIndex: 99999, pointerEvents: 'none', whiteSpace: 'pre',
+          }}>
+            {`vp ${vp.w}x${vp.h}  dpr ${typeof window !== 'undefined' ? window.devicePixelRatio : '?'}\n`}
+            {`scale ${scale.toFixed(4)}  top ${top}  dispH ${dispH}`}
+          </div>
+        </>
+      )}
 
       {/* 縦持ちヒント（非ブロッキング） */}
       {portrait && (
