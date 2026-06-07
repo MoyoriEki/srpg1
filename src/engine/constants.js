@@ -1,6 +1,6 @@
 // ═══ ゲーム全体の定数 ═══
 // アプリのバージョン（右上の設定パネルに表示。どのビルドが動いてるか確認用）
-export const APP_VERSION = 'v2.0.1';
+export const APP_VERSION = 'v2.0.2';
 export const TILE = 48;
 export const GW = 1280;
 export const GH = 720;

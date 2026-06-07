@@ -27,13 +27,9 @@ export default function ScreenScaler({ children }) {
   const scale = Math.min(vp.w / GW, vp.h / GH);
   const portrait = vp.h > vp.w;
 
-  // 端のAA明線（1pxの白ライン）対策。
-  // 端数倍率＋端数 devicePixelRatio だとコンテンツ端がデバイスピクセルに乗らず、
-  // 明るいマップ上端と暗い背景の境界にハーフピクセルの明線が出る。
-  // → ①コンテンツを OVER px 外側へオーバースキャンして端の境界を画面外へ押し出し、
-  //   ②さらにクリップ箱の最外周 1px を背景同色の暗いフチで覆う。
-  //   オーバースキャンだけだとクリップ箱自体の端がサブピクセル位置に乗ったとき
-  //   境界行が明るい中身で塗られて明線が残るため、暗フチで輝度差そのものを消す。
+  // 端数倍率＋端数 devicePixelRatio 対策のオーバースキャン。
+  // コンテンツを OVER px 外側へ伸ばし、overflow:hidden の箱でクリップして端の境界を画面外へ追い出す。
+  // （上端の白ライン本体は html 背景の白透けが原因。index.html で html に背景色を敷いて対処済み）
   const dispW = Math.ceil(GW * scale);
   const dispH = Math.ceil(GH * scale);
   const left = Math.round((vp.w - dispW) / 2);
@@ -59,16 +55,6 @@ export default function ScreenScaler({ children }) {
           {children}
         </div>
       </div>
-
-      {/* 端のAA明線を覆う暗フチ（背景同色）。
-          クリップ箱の境界を±2pxまたいで塗りつぶす。ブラウザによっては
-          overflow:hidden の端で1px外側へにじむため、内側だけでなく外側も覆う。 */}
-      <div style={{
-        position: 'absolute', left: left - 2, top: top - 2,
-        width: dispW + 4, height: dispH + 4,
-        boxShadow: 'inset 0 0 0 4px #0a0e1e',
-        pointerEvents: 'none',
-      }} />
 
       {/* 縦持ちヒント（非ブロッキング） */}
       {portrait && (
