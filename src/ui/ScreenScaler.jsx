@@ -58,13 +58,17 @@ export default function ScreenScaler({ children }) {
         }}>
           {children}
         </div>
-
-        {/* 端のAA明線を覆う暗フチ（背景同色。最外周1pxを塗りつぶして輝度差を消す） */}
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          boxShadow: 'inset 0 0 0 1px #0a0e1e',
-        }} />
       </div>
+
+      {/* 端のAA明線を覆う暗フチ（背景同色）。
+          クリップ箱の境界を±2pxまたいで塗りつぶす。ブラウザによっては
+          overflow:hidden の端で1px外側へにじむため、内側だけでなく外側も覆う。 */}
+      <div style={{
+        position: 'absolute', left: left - 2, top: top - 2,
+        width: dispW + 4, height: dispH + 4,
+        boxShadow: 'inset 0 0 0 4px #0a0e1e',
+        pointerEvents: 'none',
+      }} />
 
       {/* 縦持ちヒント（非ブロッキング） */}
       {portrait && (

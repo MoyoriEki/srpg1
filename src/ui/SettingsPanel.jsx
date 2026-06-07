@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getBGMVolume, setBGMVolume } from '../engine/audio.js';
+import { APP_VERSION } from '../engine/constants.js';
 import { scaledStyle } from './uiScale.jsx';
 
 export default function SettingsPanel() {
@@ -49,6 +50,14 @@ export default function SettingsPanel() {
             value={vol} onChange={handleVol}
             style={{ width: '100%', accentColor: '#3b82f6' }}
           />
+
+          {/* バージョン表示 */}
+          <div style={{
+            marginTop: 12, paddingTop: 8, borderTop: '1px solid #334155',
+            fontSize: 10, color: '#475569', textAlign: 'right', letterSpacing: 0.5,
+          }}>
+            {APP_VERSION}
+          </div>
         </div>
       )}
     </>
