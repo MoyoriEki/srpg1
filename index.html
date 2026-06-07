@@ -15,14 +15,18 @@
   <title>SRPG Proto 2.0</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; }
+    /* html にも背景色を敷く。これが無いと html はデフォルト透明＝裏のブラウザキャンバス（白）が見える。
+       standalone PWA でステータスバー境界やsafe-area/サブピクセル丸めで最上部に1px隙間ができた瞬間、
+       その白が「上端の白ライン」として覗く（間欠的に発生）。html を背景同色にして白透けを防ぐ。 */
+    html, body { width: 100%; height: 100%; background: #0a0e1e; }
     body {
-      background: #0a0e1e; overflow: hidden;
+      overflow: hidden;
       display: flex; align-items: center; justify-content: center;
       overscroll-behavior: none;
       -webkit-text-size-adjust: 100%;
       -webkit-tap-highlight-color: transparent;
     }
+    #root { background: #0a0e1e; }
   </style>
 </head>
 <body>
