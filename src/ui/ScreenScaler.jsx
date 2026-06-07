@@ -30,8 +30,10 @@ export default function ScreenScaler({ children }) {
   // 端のAA明線（1pxの白ライン）対策。
   // 端数倍率＋端数 devicePixelRatio だとコンテンツ端がデバイスピクセルに乗らず、
   // 明るいマップ上端と暗い背景の境界にハーフピクセルの明線が出る。
-  // → コンテンツを OVER px 外側へオーバースキャンし、overflow:hidden の箱でクリップ。
-  //    端の境界そのものを画面外へ追い出すことで明線を消す（箱背景は背景同色で不可視）。
+  // → ①コンテンツを OVER px 外側へオーバースキャンして端の境界を画面外へ押し出し、
+  //   ②さらにクリップ箱の最外周 1px を背景同色の暗いフチで覆う。
+  //   オーバースキャンだけだとクリップ箱自体の端がサブピクセル位置に乗ったとき
+  //   境界行が明るい中身で塗られて明線が残るため、暗フチで輝度差そのものを消す。
   const dispW = Math.ceil(GW * scale);
   const dispH = Math.ceil(GH * scale);
   const left = Math.round((vp.w - dispW) / 2);
@@ -56,6 +58,12 @@ export default function ScreenScaler({ children }) {
         }}>
           {children}
         </div>
+
+        {/* 端のAA明線を覆う暗フチ（背景同色。最外周1pxを塗りつぶして輝度差を消す） */}
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          boxShadow: 'inset 0 0 0 1px #0a0e1e',
+        }} />
       </div>
 
       {/* 縦持ちヒント（非ブロッキング） */}
