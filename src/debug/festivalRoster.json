@@ -1,0 +1,82 @@
+[
+  {
+    "charId": "p01",
+    "label": "エース1: 撃破連鎖（canto+衝動雪だるま）",
+    "class": "スレイヤー",
+    "level": 13,
+    "stats": { "hp": 69, "str": 27, "def": 18, "int": 11, "mov": 4, "pp": 10 },
+    "techs": ["猛撃", "烈火", "炎連拳"],
+    "skills": ["衝動", "闘争本能", "健脚のブーツ"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p05",
+    "label": "エース2: 衝撃波で巻き込み連鎖",
+    "class": "スレイヤー",
+    "level": 13,
+    "stats": { "hp": 70, "str": 26, "def": 17, "int": 11, "mov": 4, "pp": 10 },
+    "techs": ["猛撃", "脳天割り", "炎連拳"],
+    "skills": ["衝動", "衝撃波", "猛者の腕輪"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p07",
+    "label": "お膳立て: 踊り（再行動配り）",
+    "class": "オラクル",
+    "level": 13,
+    "stats": { "hp": 52, "str": 14, "def": 13, "int": 30, "mov": 4, "pp": 9 },
+    "techs": ["踊り", "ヒール", "救出"],
+    "skills": ["治癒の知識", "健脚のブーツ", "戦鼓"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p10",
+    "label": "お膳立て: 射程2の削り役",
+    "class": "ソーサラー",
+    "level": 13,
+    "stats": { "hp": 50, "str": 20, "def": 13, "int": 24, "mov": 4, "pp": 11 },
+    "techs": ["烈火", "狙い撃ち", "稲妻"],
+    "skills": ["千里眼", "闘争本能", "猛者の腕輪"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p03",
+    "label": "前衛: 挑発で誘導＋報復",
+    "class": "ヴァンガード",
+    "level": 13,
+    "stats": { "hp": 72, "str": 24, "def": 18, "int": 11, "mov": 4, "pp": 9 },
+    "techs": ["猛撃", "挑発", "ぶちかまし"],
+    "skills": ["戦鼓", "鉄の盾", "健脚のブーツ"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p04",
+    "label": "壁: 不屈＋挑発で受け",
+    "class": "フォートレス",
+    "level": 13,
+    "stats": { "hp": 80, "str": 16, "def": 24, "int": 12, "mov": 4, "pp": 6 },
+    "techs": ["鉄壁の構え", "挑発", "シールドバッシュ"],
+    "skills": ["将軍の大盾", "守護", "鉄の盾"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p06",
+    "label": "お膳立て: デバフ＋身代わり",
+    "class": "プロテクター",
+    "level": 13,
+    "stats": { "hp": 62, "str": 15, "def": 22, "int": 22, "mov": 4, "pp": 6 },
+    "techs": ["忘却の声", "バインド", "救出"],
+    "skills": ["弱体の杖", "観察眼", "守護"],
+    "moveType": "infantry"
+  },
+  {
+    "charId": "p11",
+    "label": "支援: 回復＋隣接バフ",
+    "class": "オラクル",
+    "level": 13,
+    "stats": { "hp": 50, "str": 15, "def": 12, "int": 30, "mov": 4, "pp": 9 },
+    "techs": ["ヒール", "風の祈り", "風の矢"],
+    "skills": ["治癒の知識", "導きの腕輪", "風の加護"],
+    "moveType": "infantry"
+  }
+]

@@ -42,8 +42,20 @@ import RecruitUI from './ui/RecruitUI.jsx';
 import mapM1 from './maps/m1.json';
 import mapM2 from './maps/m2.json';
 
+// ─── お祭りテスト（デバッグ編成投入口・使い捨て） ───
+import { buildFestivalUnits } from './debug/festival.js';
+import festivalMap from './maps/festival.json';
+
 // 6ステージ分のマップ配列（M3-M6は暫定でM1/M2を使い回し）
 const STAGE_MAPS = [mapM1, mapM2, mapM1, mapM2, mapM1, mapM2];
+
+// お祭りテスト起動判定: URL に ?festival / ?fest、または window.__festival=true
+const FESTIVAL_MODE = typeof window !== 'undefined' && (() => {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    return q.has('festival') || q.has('fest') || window.__festival === true;
+  } catch { return false; }
+})();
 
 // ════════════════════════════════════════════
 // sleep helper
@@ -160,6 +172,14 @@ export default function App() {
   // ════════════════════════════════════════════
   useEffect(() => {
     resetUid(0);
+    // お祭りテスト: ドラフト/CC/配置をスキップして育成済み8体を直置き
+    if (FESTIVAL_MODE) {
+      const festUnits = buildFestivalUnits();
+      setFullPool(festUnits);
+      setRoster(festUnits);
+      startFestivalStage(festUnits);
+      return;
+    }
     const allRoster = createRoster(); // 13人全員
     setFullPool(allRoster);
     const shuffled = [...allRoster].sort(() => Math.random() - 0.5);
@@ -180,6 +200,8 @@ export default function App() {
   debugRef.current.handleLevelUp = handleLevelUp;
   debugRef.current.setUnits = setUnits;
   debugRef.current.setRoster = setRoster;
+  debugRef.current.setFullPool = setFullPool;
+  debugRef.current.startFestivalStage = startFestivalStage;
   if (!window.__debug) {
     window.__debug = {
       get units() { return debugRef.current.units; },
@@ -192,8 +214,16 @@ export default function App() {
         debugRef.current.setRoster(prev => prev.map(x => x.id === newUnit.id ? newUnit : x));
         console.log('レベルアップ完了:', newUnit.name, 'Lv', newUnit.level);
       },
+      // お祭りテスト面を即起動（?festival を付けなくても呼べる）
+      festival() {
+        const festUnits = buildFestivalUnits();
+        debugRef.current.setFullPool(festUnits);
+        debugRef.current.setRoster(festUnits);
+        debugRef.current.startFestivalStage(festUnits);
+        console.log('お祭りテスト面を開始:', festUnits.map(u => `${u.name}(${u.cls})`).join(', '));
+      },
     };
-    console.log('__debug 有効: __debug.levelUp("p0"), __debug.units');
+    console.log('__debug 有効: __debug.levelUp("p0"), __debug.festival(), __debug.units');
   }
 
   function initStage(stageIdx, currentRoster) {
@@ -214,6 +244,35 @@ export default function App() {
     clearSelection();
     const bgm = mapData.bgm || {};
     playBGM(bgm.default || 'map');
+  }
+
+  // ════════════════════════════════════════════
+  // お祭りテスト: 育成済み8体を直置きして即 player フェーズ
+  // （配置フェーズもスキップ。使い捨て・ボツ時はこの関数ごと削除）
+  // ════════════════════════════════════════════
+  function startFestivalStage(festRoster) {
+    loadMap(festivalMap);
+    const enemies = createEnemiesFromMap(festivalMap);
+    const dz = getDeployZone();
+    // デプロイゾーン先頭から順に直置き
+    const placed = festRoster.map((u, i) => {
+      const cell = dz[i] || dz[dz.length - 1] || { x: 1, y: 1 };
+      return { ...u, x: cell.x, y: cell.y, deployed: true, acted: false };
+    });
+    let all = [...placed, ...enemies];
+    // mapStartイベント（敵チャージ即発動など本番同様）
+    all = fireEvents('mapStart', { units: all }, all);
+    setUnits(all);
+    setStage(NUM_STAGES - 1); // クリア後は次面に進まずループクリア扱い
+    setTurn(1);
+    setGameOver(null);
+    setPhase('player');
+    setLog([{ text: '── お祭りテスト面 開始（デバッグ編成・運排除） ──', type: 'phase' }]);
+    clearSelection();
+    playBGM(festivalMap.bgm?.default || 'map');
+    showBanner('FESTIVAL', '#f59e0b', 1400);
+    // ターン開始スキル
+    all.filter(u => u.team === 'player' && u.hp > 0).forEach(u => dispatchTurnStart(u, all, []));
   }
 
   // ════════════════════════════════════════════
